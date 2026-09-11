@@ -1,0 +1,14 @@
+.env
+.env.*
+.venv
+.git
+.agents
+.codex
+__pycache__
+**/__pycache__
+.pytest_cache
+artifacts
+skills
+tests
+data/postgres*
+*.log

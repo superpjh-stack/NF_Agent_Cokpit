@@ -1,0 +1,4 @@
+interface:
+  display_name: "니즈푸드 임진감김치 제조"
+  short_description: "승인 배합 기반 김치 원료 계산·제조 작업서·LOT 품질 확인"
+  default_prompt: "$needs-food-imjingam-kimchi로 임진감김치의 승인 배합표와 목표 생산량을 확인하고 원료 소요량과 제조 작업서를 작성해줘."

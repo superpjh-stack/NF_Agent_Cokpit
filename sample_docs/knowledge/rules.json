@@ -1,0 +1,79 @@
+[
+  {
+    "rule_id": "NF-R-001",
+    "name": "안전재고 부족",
+    "source_table": "inventory",
+    "condition": "quantity < safety_stock",
+    "owner": "자재",
+    "action": "생산 소요량과 구매 현황 확인",
+    "source_document": "NF-KB-005",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  },
+  {
+    "rule_id": "NF-R-002",
+    "name": "생산 지연",
+    "source_table": "production_batches",
+    "condition": "status = 지연 또는 중단",
+    "owner": "생산관리",
+    "action": "납기와 설비 상태 확인",
+    "source_document": "NF-KB-008",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  },
+  {
+    "rule_id": "NF-R-003",
+    "name": "내부 검식 주의",
+    "source_table": "quality_checks",
+    "condition": "result = 주의 또는 부적합",
+    "owner": "영양사·품질",
+    "action": "표본과 LOT, 재검사 필요성 확인",
+    "source_document": "NF-KB-007",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  },
+  {
+    "rule_id": "NF-R-004",
+    "name": "외부기관 검사 대기",
+    "source_table": "quality_checks",
+    "condition": "check_type = 외부기관 검사 AND result = 의뢰중",
+    "owner": "품질",
+    "action": "검사 결과 수신 여부 확인; 합격으로 간주하지 않음",
+    "source_document": "NF-KB-007",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  },
+  {
+    "rule_id": "NF-R-005",
+    "name": "출하 대기",
+    "source_table": "shipments",
+    "condition": "status = 대기",
+    "owner": "물류",
+    "action": "납기와 생산·품질 진행 상황 확인",
+    "source_document": "NF-KB-008",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  },
+  {
+    "rule_id": "NF-R-006",
+    "name": "미해결 설비 이벤트",
+    "source_table": "equipment_events",
+    "condition": "resolved_at IS NULL",
+    "owner": "설비·생산관리",
+    "action": "이벤트 원인 및 대응 기록 확인",
+    "source_document": "NF-KB-006",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  },
+  {
+    "rule_id": "NF-R-007",
+    "name": "김치 승인 배합 미등록",
+    "source_table": "knowledge_documents",
+    "condition": "임진감김치 승인 배합표가 없음",
+    "owner": "제품개발·품질",
+    "action": "제품 유형·배합표·중량 기준 확인",
+    "source_document": "NF-KB-009",
+    "revision": "DEMO-1",
+    "status": "데모·미승인"
+  }
+]
