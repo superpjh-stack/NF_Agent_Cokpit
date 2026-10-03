@@ -4,7 +4,12 @@ import re
 from pathlib import Path
 
 BUSINESS_TABLES = ("menus", "production_batches", "cooking_readings", "quality_checks",
-                   "inventory", "recipe_costs", "shipments", "equipment_events")
+                   "inventory", "recipe_costs", "shipments", "equipment_events",
+                   "kimchi_products", "kimchi_formulations", "kimchi_formulation_items",
+                   "kimchi_material_lots", "kimchi_production_lots", "kimchi_lot_inputs",
+                   "kimchi_process_records", "kimchi_packaging_lots", "kimchi_quality_results")
+BUSINESS_TABLES = BUSINESS_TABLES + ("kimchi_lots", "kimchi_process_measurements", "kimchi_ccp_checks",
+                   "kimchi_fermentation_predictions", "kimchi_inventory", "kimchi_shipments", "kimchi_claims")
 PUBLIC_TABLES = BUSINESS_TABLES + ("knowledge_documents", "rules")
 MIGRATION_TABLES = PUBLIC_TABLES + ("settings",)
 DOC_COLUMNS = "document_id,filename,title,revision,owner,effective_date,status,linked_ids,body"
@@ -37,7 +42,14 @@ class KnowledgeMixin:
                 header, body = text.split("\n---\n", 1)
                 meta = json.loads(header)
                 values = [meta[k] for k in DOC_COLUMNS.split(",")[:-1]] + [body.strip()]
-                con.execute(f"INSERT INTO knowledge_documents ({DOC_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(document_id) DO NOTHING", values)
+                con.execute(
+                    f"INSERT INTO knowledge_documents ({DOC_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(document_id) DO UPDATE SET "
+                    "filename=excluded.filename,title=excluded.title,revision=excluded.revision,owner=excluded.owner,"
+                    "effective_date=excluded.effective_date,status=excluded.status,linked_ids=excluded.linked_ids,body=excluded.body "
+                    "WHERE knowledge_documents.revision = 'DEMO-1' AND excluded.revision = 'DEMO-2'",
+                    values,
+                )
             rules = root / "rules.json"
             if rules.exists():
                 for rule in json.loads(rules.read_text(encoding="utf-8")):

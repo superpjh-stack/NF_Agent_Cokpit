@@ -31,6 +31,24 @@ API 키 없이 KPI·문서·테이블·규칙을 조회할 수 있습니다. 대
 
 임진감김치 제조에는 제품 유형, 승인 배합표 버전, 목표 생산량의 중량 기준, 공정별 수율과 품질기준이 필요합니다. 기존 `qty_per_meal`은 1식 기준이며 김치 kg 배합이 아닙니다. 현재 재고에는 원료 LOT·예약량·품질보류량이 없어 실제 사용가능량이나 전체 LOT 계보를 확정할 수 없습니다.
 
+임진감김치 전용 데이터 구조와 읽기 전용 도구는 준비되어 있습니다. `kimchi_products`, `kimchi_formulations`, `kimchi_formulation_items`, `kimchi_material_lots`, `kimchi_production_lots`, `kimchi_lot_inputs`, `kimchi_process_records`, `kimchi_packaging_lots`, `kimchi_quality_results`는 실제 승인 자료와 생산기록을 적재하기 전까지 비어 있습니다. 급식 데모 값으로 자동 채우지 않습니다.
+
+최신 V2는 [v2/README.md](v2/README.md)의 React·TypeScript + FastAPI 앱으로 별도 실행합니다. V1 Streamlit과 DB를 공유하지 않으며, V2 데모 조회는 무키로 동작하고 AI·음성은 서버 설정과 접근 코드가 필요합니다.
+
+최신 임진강김치 Agent Cockpit의 V1 업무 모델도 반영했습니다. `kimchi_lots` 계보, `kimchi_process_measurements` 절임·발효 측정, `kimchi_ccp_checks`, `kimchi_fermentation_predictions`, `kimchi_inventory`, `kimchi_shipments`, `kimchi_claims`를 별도 네임스페이스로 관리합니다. 이 데이터는 최신 참고 프로젝트의 **가상 데모**이며 실제 운영·HACCP 승인값이 아닙니다.
+
+- `get_lot_trace`: 원재료 입고부터 포장까지 부모·자식 LOT 계보
+- `get_fermentation_status`, `get_process_measurements`: 염도·pH·온도·산도·중량·설비상태와 시제품 예측
+- `get_ccp_deviations`: CCP 주의·부적합 이력
+- `get_shipment_readiness`: 출하 승인상태와 계보 전체의 CCP·발효 근거
+- `get_claim_trace`: 클레임에서 출하·포장·발효·절임·원재료 역추적
+
+- `get_kimchi_readiness`: 제품 유형·승인 배합·중량 기준·근거 문서와 원료 목록의 등록 여부를 확인합니다.
+- `calculate_kimchi_materials`: 승인 상태인 kg 배합만 같은 중량 기준으로 환산하며, 원료별 0.001kg 반올림과 합계 차이를 반환합니다. 확인된 LOT 재고에서 예약량과 품질보류량을 빼고 부족량을 계산하며 재고가 없으면 `미확인`으로 둡니다.
+- `get_kimchi_lot_trace`: 원료 LOT, 공정 실측, 포장 LOT, 품질 결과의 누락 여부를 보수적으로 판정합니다.
+
+수율은 승인 배합 또는 공정 실측값이 별도 등록되기 전에는 적용하지 않습니다. 현재 산출물 상태는 `제조 검토용 초안`이며, 실제 사용 전 승인 배합표의 문서명·개정번호·적용일과 제품 유형을 등록해야 합니다.
+
 ## API 설정과 근거
 
 서버 기본 키는 프로젝트 `.env` 또는 컨테이너 환경에서 매 세션 적용합니다. 전체 키를 입력창에 미리 넣지 않으며 끝 4자리와 출처만 보여줍니다. 접힌 설정 폼의 빈 키는 현재 값을 유지하고, 입력한 키는 세션에만 적용합니다. 키가 바뀌면 Responses 대화 연결 및 업로드 연결을 초기화합니다. 서버 기본값 복귀 버튼을 제공합니다. 서버 문서 저장소 ID만 DB 설정으로 유지하며 키는 저장하지 않습니다.
