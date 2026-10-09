@@ -1,5 +1,7 @@
 """니즈푸드 V2 facade: 최신 제조 Cockpit UX/API 계약만 참조하고 급식 데이터를 사용한다."""
 from __future__ import annotations
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from needs_agent import ManufacturingAgent, NeedsFoodRepository, NeedsFoodToolRegistry
@@ -41,13 +43,13 @@ class NeedsFoodV2Repository:
     def all_lots(self):
         with self._connect() as con:
             rows = self.inner._rows(con.execute("""SELECT b.batch_id AS lot_id,NULL AS parent_lot_id,'급식 생산' AS process,m.menu_name AS product_name,
-                       b.actual_qty AS quantity_kg,NULL AS supplier,NULL AS origin,b.status,b.started_at AS created_at
+                       b.actual_qty AS quantity,'식' AS unit,NULL AS quantity_kg,NULL AS supplier,NULL AS origin,b.status,b.started_at AS created_at
                        FROM production_batches b JOIN menus m ON m.menu_code=b.menu_code ORDER BY b.started_at DESC""").fetchall())
         return rows
     def lot_trace(self, lot_id):
         with self._connect() as con:
             row = con.execute("""SELECT b.batch_id AS lot_id,NULL AS parent_lot_id,'급식 생산' AS process,m.menu_name AS product_name,
-                       b.actual_qty AS quantity_kg,b.status,b.started_at AS created_at,b.planned_qty,m.due_at,b.kettle_no
+                       b.actual_qty AS quantity,'식' AS unit,NULL AS quantity_kg,b.status,b.started_at AS created_at,b.planned_qty,m.due_at,b.kettle_no
                        FROM production_batches b JOIN menus m ON m.menu_code=b.menu_code WHERE b.batch_id=?""", (lot_id,)).fetchone()
         return [dict(row)] if row else []
     def fermentation_status(self, lot_id):
@@ -58,10 +60,14 @@ class NeedsFoodV2Repository:
         return [{"lot_id": r["batch_id"], "ccp_name": r["check_type"], "result": r["result"], "value": None, "unit": None, "defect_type": r["issue"], "checked_at": r["checked_at"]} for r in rows if r["result"] not in {"적합", "정상", "합격"}]
     def inventory_status(self, item, shortage_only):
         rows = self.inner.inventory_status(item, shortage_only)
-        return [{"item_code": r["material_code"], "item_name": r["material_name"], "category": "원료", "quantity_kg": r["quantity"], "safety_stock_kg": r["safety_stock"], "updated_at": r["updated_at"], "stock_status": r["status"]} for r in rows]
+        return [{"item_code": r["material_code"], "item_name": r["material_name"], "category": "원료",
+                 "quantity": r["quantity"], "unit": r["unit"], "safety_stock": r["safety_stock"],
+                 "quantity_kg": r["quantity"] if r["unit"] == "kg" else None,
+                 "safety_stock_kg": r["safety_stock"] if r["unit"] == "kg" else None,
+                 "updated_at": r["updated_at"], "stock_status": r["status"]} for r in rows]
     def shipment_readiness(self, lot_id):
         query = """SELECT s.shipment_id,s.menu_code AS lot_id,s.planned_qty,s.shipped_qty,s.due_at,s.shipped_at,s.status AS approval_status,
-                   m.menu_name AS product_name FROM shipments s JOIN menus m ON m.menu_code=s.menu_code"""
+                   m.menu_name AS product_name,'식' AS unit FROM shipments s JOIN menus m ON m.menu_code=s.menu_code"""
         params = ()
         if lot_id:
             query += " WHERE s.shipment_id=?"; params = (lot_id,)
@@ -82,9 +88,32 @@ class NeedsFoodV2Repository:
         return self.inner.browse_table(table, limit, offset)["rows"]
 
 class NeedsFoodV2ToolRegistry(NeedsFoodToolRegistry):
+    # These legacy tool names are mapped to food-service records in V2.
+    FOOD_SERVICE_DESCRIPTIONS = {
+        "get_lot_trace": "급식 생산 배치의 실적을 조회한다. 수량 단위는 식이며 전체 원료 LOT 계보는 제공하지 않는다.",
+        "get_fermentation_status": "급식 조리 측정 상태를 조회한다. 발효 예측이 아니며 pH·염도·예측값은 미확인이다.",
+        "get_ccp_deviations": "급식 품질·검식의 주의 결과를 조회한다. 승인된 CCP 판정을 대신하지 않는다.",
+        "get_inventory_status": "급식 원료 재고와 안전재고 부족을 원본 unit 단위로 조회한다. 입고량이나 사용가능 재고를 확정하지 않는다.",
+        "get_shipment_readiness": "급식 출하 계획·실적을 식 단위로 조회한다. 출하 승인을 실행하지 않는다.",
+        "get_claim_trace": "클레임 연결 여부를 확인한다. 현재 급식 어댑터에 연결된 클레임 계보는 없다.",
+        "get_process_measurements": "급식 생산 배치의 조리 온도와 설비 상태를 조회한다. 발효 측정값은 제공하지 않는다.",
+    }
+
     def __init__(self, repository: NeedsFoodV2Repository):
         super().__init__(repository.inner); self.repository = repository
         self.handlers.update({"get_lot_trace": repository.lot_trace, "get_fermentation_status": repository.fermentation_status, "get_ccp_deviations": repository.ccp_deviations, "get_inventory_status": repository.inventory_status, "get_shipment_readiness": repository.shipment_readiness, "get_claim_trace": repository.claim_trace, "get_process_measurements": repository.process_measurements})
+
+    @property
+    def definitions(self):
+        return [{**definition, "description": self.FOOD_SERVICE_DESCRIPTIONS.get(definition["name"], definition["description"])}
+                for definition in super().definitions]
+
+    def execute(self, name, arguments):
+        payload = json.loads(super().execute(name, arguments))
+        if payload.get("status") == "ok" and name in self.FOOD_SERVICE_DESCRIPTIONS:
+            payload.update(demo_data=True, source="니즈푸드 급식 MES/Data Hub · 샘플",
+                           as_of="2026-09-03", retrieved_at=datetime.now(timezone.utc).isoformat())
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 def lot_snapshot(repository: NeedsFoodV2Repository, lot_id: str) -> dict[str, Any]:
     lot = next((row for row in repository.all_lots() if row["lot_id"] == lot_id), {})

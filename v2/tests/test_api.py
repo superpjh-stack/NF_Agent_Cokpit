@@ -51,7 +51,7 @@ def test_lot_and_query_boundaries(client):
 
 
 def test_demo_chat_retrieves_trace_and_evidence_without_provider(client):
-    result = client.post('/api/chat', json={'question': 'PACK-260903-001을 원재료까지 추적해줘'}).json()
+    result = client.post('/api/chat', json={'question': '니즈, PACK-260903-001을 원재료까지 추적해줘'}).json()
     assert result['mode'] == 'demo'
     assert result['records'][0]['lot_id'] == 'RAW-260901-001'
     assert result['evidence'] and result['searched_documents']
@@ -62,14 +62,14 @@ def test_demo_chat_retrieves_trace_and_evidence_without_provider(client):
 
 
 def test_demo_stock_and_historical_time_disclosure(client):
-    result = client.post('/api/chat', json={'question':'오늘 율무 재고 부족량은?'}).json()
+    result = client.post('/api/chat', json={'question':'니즈, 오늘 율무 재고 부족량은?'}).json()
     assert '80kg' in result['text']
     assert '오늘의 실시간 기록은 없습니다' in result['text']
     assert result['records'][0]['item_code'] == 'R002'
 
 
 def test_today_inbound_is_not_guessed_from_inventory_snapshot(v2_client):
-    result = v2_client.post('/api/chat', json={'question':'오늘 들어온 재고는 어떻게돼?'}).json()
+    result = v2_client.post('/api/chat', json={'question':'니즈, 오늘 들어온 재고는 어떻게돼?'}).json()
     assert result['mode'] == 'demo'
     assert '입고 이력 테이블이 연결되지 않아 확인할 수 없습니다' in result['text']
     assert '2026-09-03 06:30' in result['text']
@@ -82,7 +82,7 @@ def test_today_inbound_is_not_guessed_from_inventory_snapshot(v2_client):
 
 def test_today_shipment_plan_and_actual_are_summed_in_meals_without_ai(v2_client):
     result = v2_client.post('/api/chat', json={
-        'question':'오늘 출하계획 및 실제 출하량은 어떻게 돼?', 'mode':'ai'
+        'question':'니즈, 오늘 출하계획 및 실제 출하량은 어떻게 돼?', 'mode':'ai'
     }).json()
     assert result['mode'] == 'demo'
     assert '최신 데모 기록일 2026-09-03 기준 계획 6,800식 · 실제 출하 3,975식 · 미출하 2,825식' in result['text']
@@ -116,13 +116,13 @@ def test_documents_rules_linkage_and_empty_search(client):
 
 
 def test_paid_api_gate_and_configuration_secrecy(client, monkeypatch):
-    assert client.post('/api/chat', json={'question':'발효','mode':'ai'}).status_code == 503
+    assert client.post('/api/chat', json={'question':'니즈, 발효','mode':'ai'}).status_code == 503
     monkeypatch.setenv('OPENAI_API_KEY','sk-test-must-not-leak')
     monkeypatch.setenv('COCKPIT_ACCESS_TOKEN','private-test-code')
     meta = client.get('/api/workspace').json()['meta']
     assert meta['ai_configured']
     assert 'private-test-code' not in str(meta) and 'sk-test-must-not-leak' not in str(meta)
-    assert client.post('/api/chat', json={'question':'발효','mode':'ai'}).status_code == 401
+    assert client.post('/api/chat', json={'question':'니즈, 발효','mode':'ai'}).status_code == 401
     assert client.post('/api/voice/speak', json={'text':'발효'}, headers={'Authorization':'Bearer wrong'}).status_code == 401
     assert client.post('/api/chat/reset').json()['status'] == 'ok'
 
@@ -217,12 +217,12 @@ def test_postgres_v2_workspace_and_reopen(monkeypatch):
                 assert workspace['meta']['backend'] == 'PostgreSQL + pgvector'
                 assert len(client.get('/api/documents').json()) == 10
                 assert len(client.get('/api/lots/PACK-260903-001').json()['trace']) == 6
-                assert client.post('/api/chat', json={'question': '율무 재고 부족량'}).json()['records'][0]['item_code'] == 'R002'
+                assert client.post('/api/chat', json={'question': '니즈, 율무 재고 부족량'}).json()['records'][0]['item_code'] == 'R002'
                 # v2 tables (users, sessions, work, answers, journey events) must work on PostgreSQL too.
                 app.state.work.add_user('admin', 'admin', 'factory-a', 'admin', 'test-password-123!')
                 assert client.post('/api/auth/login', json={'username': 'admin', 'password': 'wrong'}).status_code == 401
                 assert client.post('/api/auth/login', json={'username': 'admin', 'password': 'test-password-123!'}).status_code == 200
-                answer = client.post('/api/chat', json={'question': 'CCP 근거를 확인해줘', 'lot_id': 'PACK-260903-001'}).json()
+                answer = client.post('/api/chat', json={'question': '니즈, CCP 근거를 확인해줘', 'lot_id': 'PACK-260903-001'}).json()
                 item = client.post('/api/work-items', json={'request_id': str(uuid.uuid4()), 'title': '포장 LOT 검토',
                                                             'lot_id': 'PACK-260903-001', 'note': '현장 확인', 'answer_id': answer['answer_id']}).json()
                 assert item['snapshot']['answer']['records']

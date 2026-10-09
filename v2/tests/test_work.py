@@ -54,7 +54,7 @@ def test_login_session_cookie_csrf_and_logout(environment):
 def test_snapshot_is_server_owned_immutable_and_persistent(environment):
     client, app, people = environment
     login(client, 'operator')
-    answer = client.post('/api/chat', json={'question': 'CCP 근거를 확인해줘', 'lot_id': 'PACK-260903-001'}).json()
+    answer = client.post('/api/chat', json={'question': '니즈, CCP 근거를 확인해줘', 'lot_id': 'PACK-260903-001'}).json()
     item, payload = create(client, answer)
     assert item['snapshot']['answer']['records']
     assert client.post('/api/work-items', json=payload).json()['id'] == item['id']
@@ -99,9 +99,9 @@ def test_mutation_idempotency_and_validation(environment):
     assert client.patch('/api/work-items/' + item['id'], json=mutation).json() == first
     assert client.post('/api/work-items', json={**payload,'request_id':str(uuid.uuid4()),'title':' '}).status_code == 422
     assert client.post('/api/work-items', json={**payload,'request_id':str(uuid.uuid4()),'lot_id':'bad'}).status_code == 404
-    assert client.post('/api/chat', json={'question':'PACK-260903-001', 'lot_id':'RAW-260901-001'}).status_code == 422
-    assert client.post('/api/chat', json={'question':'PACK-000000-000'}).status_code == 404
-    assert client.post('/api/chat', json={'question':'확인', 'lot_id':'bad'}).status_code == 404
+    assert client.post('/api/chat', json={'question':'니즈, PACK-260903-001', 'lot_id':'RAW-260901-001'}).status_code == 422
+    assert client.post('/api/chat', json={'question':'니즈, PACK-000000-000'}).status_code == 404
+    assert client.post('/api/chat', json={'question':'니즈, 확인', 'lot_id':'bad'}).status_code == 404
 
 
 def test_optional_protected_deployment_and_deep_links(environment, monkeypatch):
@@ -127,23 +127,23 @@ def test_login_rate_limit(environment):
 def test_followup_answers_preserve_prior_evidence(environment):
     client, app, people = environment
     login(client, 'reviewer')
-    first = client.post('/api/chat', json={'question':'공정 계보', 'lot_id':'PACK-260903-001'}).json()
+    first = client.post('/api/chat', json={'question':'니즈, 공정 계보', 'lot_id':'PACK-260903-001'}).json()
     item, _ = create(client, first)
-    second = client.post('/api/chat', json={'question':'발효 측정', 'lot_id':item['lot_id'], 'work_id':item['id']}).json()
+    second = client.post('/api/chat', json={'question':'니즈, 발효 측정', 'lot_id':item['lot_id'], 'work_id':item['id']}).json()
     response = change(client, item, 'attach_answer', answer_id=second['answer_id'])
     assert response.status_code == 200
     updated = response.json()
     assert len(updated['snapshots']) == 2
     assert updated['snapshots'][0]['answer'] == first
     assert updated['snapshot']['answer'] == second
-    assert client.post('/api/chat', json={'question':'확인', 'lot_id':'RAW-260901-001', 'work_id':item['id']}).status_code == 409
+    assert client.post('/api/chat', json={'question':'니즈, 확인', 'lot_id':'RAW-260901-001', 'work_id':item['id']}).status_code == 409
     login(client, 'outsider')
-    assert client.post('/api/chat', json={'question':'확인', 'lot_id':item['lot_id'], 'work_id':item['id']}).status_code == 404
+    assert client.post('/api/chat', json={'question':'니즈, 확인', 'lot_id':item['lot_id'], 'work_id':item['id']}).status_code == 404
 
 
 def test_lot_trace_count_does_not_count_ccp_as_process(environment):
     client, _, _ = environment
-    answer = client.post('/api/chat', json={'question':'공정 계보', 'lot_id':'FERM-260903-002'}).json()
+    answer = client.post('/api/chat', json={'question':'니즈, 공정 계보', 'lot_id':'FERM-260903-002'}).json()
     assert '연결 공정 1건' in answer['text']
     assert len(answer['records']) == 2
     assert len(answer['summary']) < 450

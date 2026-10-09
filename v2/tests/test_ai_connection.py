@@ -25,7 +25,7 @@ def test_ai_connection_errors_are_actionable(tmp_path, monkeypatch, exception, c
     with TestClient(create_app(NeedsFoodV2Repository(tmp_path / 'connection.db'))) as client:
         # Repeated errors must not exhaust the server's concurrent request slots.
         for _ in range(4):
-            result = client.post('/api/chat', json={'question': '생산 현황을 알려줘', 'mode': 'ai'})
+            result = client.post('/api/chat', json={'question': '니즈, 생산 현황을 알려줘', 'mode': 'ai'})
             assert result.status_code == status
             assert expected in result.json()['detail']
             assert 'private provider detail' not in result.text
