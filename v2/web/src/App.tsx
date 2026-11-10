@@ -77,7 +77,7 @@ export default function App() {
     <header className="app-header">
       <div className="brand"><span className="brand-mark"><Leaf size={22}/></span><div><strong>니즈푸드 제조 AI</strong><small>생산 · 품질 · 납품</small></div></div>
       <div className="record-status"><span>{data.meta.demo_data ? '샘플 기록 기준' : '기록 기준일'}</span><strong>{data.meta.as_of}</strong></div>
-      <div className="header-actions"><button className="mobile-panel-button" onClick={() => setSidePanel('questions')}><Sparkles size={18}/>질문</button><button className="mobile-panel-button" onClick={() => setSidePanel('library')}><Menu size={18}/>자료</button><button className="icon-button" aria-label="데이터 새로고침" onClick={load}><RefreshCw size={18}/></button><button className="settings-button" onClick={() => { setTokenDraft(token); setSettings(true); }}><Settings2 size={17}/>연결 설정</button></div>
+      <div className="header-actions"><button className="mobile-panel-button" onClick={() => setSidePanel('library')}><Menu size={18}/>자료</button><button className="mobile-panel-button" onClick={() => setSidePanel('questions')}><Sparkles size={18}/>질문</button><button className="icon-button" aria-label="데이터 새로고침" onClick={load}><RefreshCw size={18}/></button><button className="settings-button" onClick={() => { setTokenDraft(token); setSettings(true); }}><Settings2 size={17}/>연결 설정</button></div>
     </header>
 
     {sidePanel && <button className="panel-backdrop" aria-label="패널 닫기" onClick={() => setSidePanel(null)}/>}

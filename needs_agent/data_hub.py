@@ -507,3 +507,8 @@ class NeedsFoodRepository(KnowledgeMixin):
         query = "SELECT * FROM kimchi_process_measurements WHERE 1=1"; params: tuple[Any, ...] = ()
         if lot_id: query += " AND lot_id=?"; params = (lot_id,)
         with self._connect() as con: return self._rows(con.execute(query + " ORDER BY measured_at DESC", params).fetchall())
+
+
+# Backward-compatible import location used by the V2 integration tests and
+# existing callers. The implementation remains in the dedicated adapter.
+from .postgres import PostgresRepository  # noqa: E402  (after base class definition)

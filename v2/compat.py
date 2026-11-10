@@ -34,7 +34,10 @@ QUESTION_GROUPS = {
 
 class NeedsFoodV2Repository:
     TABLES = {"menus":"메뉴 계획", "production_batches":"생산 배치", "cooking_readings":"조리 측정", "quality_checks":"품질·검식", "inventory":"원료 재고", "shipments":"출하", "equipment_events":"설비 이벤트", "rules":"확인 규칙", "knowledge_documents":"지식 문서"}
-    def __init__(self, database_path: str | Path): self.inner = NeedsFoodRepository(database_path)
+    def __init__(self, database_path: str | Path | NeedsFoodRepository):
+        # Tests and legacy callers may provide the base repository instance.
+        # Normalize it here so every V2 API path sees the same adapter contract.
+        self.inner = database_path if isinstance(database_path, NeedsFoodRepository) else NeedsFoodRepository(database_path)
     def __getattr__(self, name: str): return getattr(self.inner, name)
     def _connect(self): return self.inner._connect()
     def dashboard(self):

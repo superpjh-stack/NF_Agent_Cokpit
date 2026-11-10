@@ -43,7 +43,7 @@ class Speech(BaseModel):
 
 
 class RealtimeToolCall(BaseModel):
-    name: str = Field(pattern='^(list_tags|get_latest|get_readings|get_ccp_excursions)$')
+    name: str = Field(pattern='^(search_knowledge|get_rules|get_daily_briefing|get_production_delays|get_inventory_status|get_quality_summary|get_batch_trace|get_cooking_conditions|get_recipe_cost|get_kimchi_readiness|calculate_kimchi_materials|get_kimchi_lot_trace)$')
     arguments: dict = Field(default_factory=dict)
 
 
@@ -180,9 +180,14 @@ class EvidenceRegistry(NeedsFoodToolRegistry):
 
 
 def create_app(repository=None, static_dir: Path | None = None):
+    provided_repository = repository
+
     @asynccontextmanager
     async def lifespan(app):
-        app.state.repo = repository or create_repository(os.getenv('V2_SQLITE_PATH', str(ROOT / 'data/needs_food_v2_demo.db')))
+        selected_repository = provided_repository or create_repository(os.getenv('V2_SQLITE_PATH', str(ROOT / 'data/needs_food_v2_demo.db')))
+        if not isinstance(selected_repository, NeedsFoodRepository):
+            selected_repository = NeedsFoodRepository(selected_repository)
+        app.state.repo = selected_repository
         app.state.work = WorkStore(app.state.repo)
         create_tables(app.state.repo)
         yield
@@ -272,13 +277,18 @@ def create_app(repository=None, static_dir: Path | None = None):
             '당신은 니즈푸드 제조 현장의 한국어 음성 업무 도우미다. 짧고 자연스러운 존댓말로 답한다. '
             f"당신의 호출명은 {WAKE_POLICY['agent_name']}다. 매 질문 시작에 호출명이 있는 질문만 답한다. 호출된 질문에는 핵심부터 답한다. "
             '아래 제공된 조회 전용 자료는 회사 기록 질문에만 사용한다. 일반 지식 질문은 알고 있는 내용으로 답한다. '
-            '현재 설비값·센서 이력·CCP 이탈 질문은 반드시 제공된 데이터 플랫폼 도구를 호출한다. 설비 코드를 모르면 list_tags를 먼저 호출한다. '
+            '생산·품질·재고·배치·조리조건 질문은 반드시 아래 제공된 니즈푸드 읽기 전용 도구를 호출한다. '
             '회사 기록에 없는 값은 반드시 미확인이라고 말하고 추측하지 않는다. 수치에는 단위와 KST 시각을 붙인다. 출하 승인, CCP 처분, 공정 변경을 결정하거나 실행하지 않는다. '
             'LOT·수치·상태는 잘못 들었을 수 있으므로 중요한 식별자는 짧게 재확인한다. 답변은 보통 3문장 이내로 한다.\n'
             f'현재 선택 LOT: {lot_id or "전체 기록"}\n조회 자료: {realtime_context(lot_id)}'
         )
         registry = NeedsFoodToolRegistry(app.state.repo)
-        realtime_tool_names = {'list_tags', 'get_latest', 'get_readings', 'get_ccp_excursions'}
+        realtime_tool_names = {
+            'search_knowledge', 'get_rules', 'get_daily_briefing', 'get_production_delays',
+            'get_inventory_status', 'get_quality_summary', 'get_batch_trace',
+            'get_cooking_conditions', 'get_recipe_cost', 'get_kimchi_readiness',
+            'calculate_kimchi_materials', 'get_kimchi_lot_trace',
+        }
         realtime_tools = [
             {key: value for key, value in definition.items() if key != 'strict'}
             for definition in registry.definitions if definition.get('name') in realtime_tool_names
