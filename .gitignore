@@ -11,3 +11,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 *.log
+infra/needsfood-v2-aws/cdk.out/
+**/.venv-v2-aws/
+cdk.out/
