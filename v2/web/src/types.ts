@@ -1,3 +1,4 @@
+import {apiPath} from './apiPath';
 import type {WakePolicy} from './wake';
 export type Row = Record<string, string | number | null>;
 export type Lot = Row & {lot_id:string; parent_lot_id:string|null; process:string; product_name:string; quantity:number; unit:string; quantity_kg:number|null; status:string; created_at:string};
@@ -8,9 +9,9 @@ export type TableInfo = {table:string;label:string;count:number;exists:boolean};
 export type Workspace = {kpi: Record<string,number>;lots:Lot[];fermentation:Fermentation[];ccp:Row[];inventory:Row[];shipments:Row[];rules:Rule[];tables:TableInfo[];questions:Record<string,string[]>;meta:{wake:WakePolicy;company:string;version:string;demo_data:boolean;as_of:string;backend:string;ai_configured:boolean;local_dev_ai?:boolean;model:string;retrieved_at:string}};
 export type Detail = {lot:Lot;trace:Lot[];fermentation:Fermentation[];ccp:Row[];shipments:Row[];measurements:Row[]};
 export type Evidence = {filename:string;document_id?:string;text:string};
-export type Answer = {ignored?:boolean;answer_id?:string;captured_at?:string;summary?:string;retrieved_at?:string;context?:{lot_id:string|null;as_of:string};unknowns?:string[];text:string;sources:string[];evidence:Evidence[];data_tools:string[];records:Row[];searched_documents:boolean;mode:'ai'|'demo';demo_data?:boolean};
+export type Answer = {voice_summary?:string;request_coverage?:{request:string;status:string}[];comparison_tables?:{title:string;columns:string[];rows:string[][]}[];ignored?:boolean;answer_id?:string;captured_at?:string;summary?:string;retrieved_at?:string;context?:{lot_id:string|null;as_of:string};unknowns?:string[];text:string;sources:string[];evidence:Evidence[];data_tools:string[];records:Row[];searched_documents:boolean;mode:'ai'|'demo';demo_data?:boolean};
 export async function request<T>(path:string, init?:RequestInit):Promise<T> {
- const response = await fetch('/api'+path, init);
+ const response = await fetch(apiPath('/api'+path), init);
  if (!response.ok) {const data = await response.json().catch(()=>({})); throw new Error(typeof data.detail === 'string' ? data.detail : `요청을 처리하지 못했습니다 (${response.status}).`);}
  return response.json();
 }
@@ -25,7 +26,7 @@ export function clientId(){
 }
 // Pilot journey events: names and timings only, never text, audio or keys. Losing one never blocks work.
 const journeyId=clientId(), queue:Record<string,unknown>[]=[];let flushTimer:ReturnType<typeof setTimeout>|null=null;
-function flush(){flushTimer=null;const events=queue.splice(0,20);if(!events.length)return;fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({events}),keepalive:true}).catch(()=>{});if(queue.length)flush()}
+function flush(){flushTimer=null;const events=queue.splice(0,20);if(!events.length)return;fetch(apiPath('/api/events'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({events}),keepalive:true}).catch(()=>{});if(queue.length)flush()}
 // Work events use the work item id as journey so a save on the phone links to the PC review.
 export function track(event:JourneyEvent,extra:{source?:'voice'|'text'|'suggestion';mode?:'demo'|'ai';duration_ms?:number;work?:string}={}){
  const {work,...rest}=extra;

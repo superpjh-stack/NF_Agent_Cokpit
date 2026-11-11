@@ -31,8 +31,8 @@ def v2_client(tmp_path, monkeypatch):
 
 def test_workspace_returns_real_counts_and_no_credentials(client):
     data = client.get('/api/workspace').json()
-    assert data['kpi']['packed_kg'] == 9600
-    assert len(data['lots']) == 7
+    assert data['kpi']['planned_meals'] == 6800
+    assert len(data['lots']) == 4
     assert len(data['rules']) == 7
     assert not data['meta']['ai_configured']
     assert client.get('/api/health').json()['status'] == 'ok'
@@ -40,20 +40,20 @@ def test_workspace_returns_real_counts_and_no_credentials(client):
 
 
 def test_lot_and_query_boundaries(client):
-    detail = client.get('/api/lots/PACK-260903-001').json()
-    assert detail['trace'][0]['lot_id'] == 'RAW-260901-001'
-    assert len(detail['measurements']) == 3
+    detail = client.get('/api/lots/B-20260903-M001-01').json()
+    assert detail['trace'][0]['lot_id'] == 'B-20260903-M001-01'
+    assert len(detail['measurements']) == 1
     assert client.get('/api/lots/unknown').status_code == 404
     assert client.get('/api/tables/app_settings').status_code == 400
-    assert client.get('/api/tables/lots?limit=101').status_code == 422
-    assert client.get('/api/tables/lots?offset=-1').status_code == 422
-    assert client.get('/api/tables/lots?limit=2&offset=2').json() != client.get('/api/tables/lots?limit=2').json()
+    assert client.get('/api/tables/production_batches?limit=101').status_code == 422
+    assert client.get('/api/tables/production_batches?offset=-1').status_code == 422
+    assert client.get('/api/tables/production_batches?limit=2&offset=2').json() != client.get('/api/tables/production_batches?limit=2').json()
 
 
 def test_demo_chat_retrieves_trace_and_evidence_without_provider(client):
-    result = client.post('/api/chat', json={'question': '니즈, PACK-260903-001을 원재료까지 추적해줘'}).json()
+    result = client.post('/api/chat', json={'question': '니즈, B-20260903-M001-01을 원재료까지 추적해줘'}).json()
     assert result['mode'] == 'demo'
-    assert result['records'][0]['lot_id'] == 'RAW-260901-001'
+    assert result['records'][0]['lot_id'] == 'B-20260903-M001-01'
     assert result['evidence'] and result['searched_documents']
     assert 'get_lot_trace' in result['data_tools']
     assert client.post('/api/chat', json={'question':'  '}).status_code == 422
@@ -62,10 +62,10 @@ def test_demo_chat_retrieves_trace_and_evidence_without_provider(client):
 
 
 def test_demo_stock_and_historical_time_disclosure(client):
-    result = client.post('/api/chat', json={'question':'니즈, 오늘 율무 재고 부족량은?'}).json()
-    assert '80kg' in result['text']
+    result = client.post('/api/chat', json={'question':'니즈, 오늘 닭고기 재고 부족량은?'}).json()
+    assert '60kg' in result['text']
     assert '오늘의 실시간 기록은 없습니다' in result['text']
-    assert result['records'][0]['item_code'] == 'R002'
+    assert result['records'][0]['item_name'] == '닭고기'
 
 
 def test_today_inbound_is_not_guessed_from_inventory_snapshot(v2_client):
@@ -122,8 +122,8 @@ def test_paid_api_gate_and_configuration_secrecy(client, monkeypatch):
     meta = client.get('/api/workspace').json()['meta']
     assert meta['ai_configured']
     assert 'private-test-code' not in str(meta) and 'sk-test-must-not-leak' not in str(meta)
-    assert client.post('/api/chat', json={'question':'니즈, 발효','mode':'ai'}).status_code == 401
-    assert client.post('/api/voice/speak', json={'text':'발효'}, headers={'Authorization':'Bearer wrong'}).status_code == 401
+    assert client.post('/api/chat', json={'question':'니즈, 발효','mode':'ai'}, headers={'Host':'production.example'}).status_code == 401
+    assert client.post('/api/voice/speak', json={'text':'발효'}, headers={'Authorization':'Bearer wrong','Host':'production.example'}).status_code == 401
     assert client.post('/api/chat/reset').json()['status'] == 'ok'
 
 
@@ -147,7 +147,7 @@ def test_realtime_voice_session_is_gated_and_uses_verified_lot_context(client, m
 
     monkeypatch.setattr('v2.api.httpx.AsyncClient', FakeAsyncClient)
     headers = {'Content-Type':'application/sdp', 'Authorization':'Bearer voice-code'}
-    response = client.post('/api/realtime/session?lot_id=PACK-260903-001', content='offer-sdp', headers=headers)
+    response = client.post('/api/realtime/session?lot_id=B-20260903-M001-01', content='offer-sdp', headers=headers)
     assert response.status_code == 200
     assert response.text == 'answer-sdp'
     assert response.headers['content-type'].startswith('application/sdp')
@@ -155,10 +155,10 @@ def test_realtime_voice_session_is_gated_and_uses_verified_lot_context(client, m
     assert captured['request']['headers']['Authorization'] == 'Bearer sk-test-realtime-secret'
     assert 'sk-test-realtime-secret' not in response.text
     session = captured['request']['files']['session'][1]
-    assert 'PACK-260903-001' in session
+    assert 'B-20260903-M001-01' in session
     assert 'semantic_vad' in session and 'gpt-realtime-2.1' in session
     assert client.post('/api/realtime/session?lot_id=UNKNOWN', content='offer', headers=headers).status_code == 404
-    assert client.post('/api/realtime/session', content='offer', headers={'Content-Type':'application/sdp','Authorization':'Bearer wrong'}).status_code == 401
+    assert client.post('/api/realtime/session', content='offer', headers={'Content-Type':'application/sdp','Authorization':'Bearer wrong','Host':'production.example'}).status_code == 401
 
 
 def test_local_development_can_use_server_ai_without_browser_token(client, monkeypatch):
@@ -216,15 +216,15 @@ def test_postgres_v2_workspace_and_reopen(monkeypatch):
                 workspace = client.get('/api/workspace').json()
                 assert workspace['meta']['backend'] == 'PostgreSQL + pgvector'
                 assert len(client.get('/api/documents').json()) == 10
-                assert len(client.get('/api/lots/PACK-260903-001').json()['trace']) == 6
+                assert len(client.get('/api/lots/B-20260903-M001-01').json()['trace']) == 6
                 assert client.post('/api/chat', json={'question': '니즈, 율무 재고 부족량'}).json()['records'][0]['item_code'] == 'R002'
                 # v2 tables (users, sessions, work, answers, journey events) must work on PostgreSQL too.
                 app.state.work.add_user('admin', 'admin', 'factory-a', 'admin', 'test-password-123!')
                 assert client.post('/api/auth/login', json={'username': 'admin', 'password': 'wrong'}).status_code == 401
                 assert client.post('/api/auth/login', json={'username': 'admin', 'password': 'test-password-123!'}).status_code == 200
-                answer = client.post('/api/chat', json={'question': '니즈, CCP 근거를 확인해줘', 'lot_id': 'PACK-260903-001'}).json()
+                answer = client.post('/api/chat', json={'question': '니즈, CCP 근거를 확인해줘', 'lot_id': 'B-20260903-M001-01'}).json()
                 item = client.post('/api/work-items', json={'request_id': str(uuid.uuid4()), 'title': '포장 LOT 검토',
-                                                            'lot_id': 'PACK-260903-001', 'note': '현장 확인', 'answer_id': answer['answer_id']}).json()
+                                                            'lot_id': 'B-20260903-M001-01', 'note': '현장 확인', 'answer_id': answer['answer_id']}).json()
                 assert item['snapshot']['answer']['records']
                 assert client.get('/api/work-items/' + item['id']).json()['version'] == item['version']
                 journey = item['id']

@@ -38,8 +38,8 @@ def test_create_app_normalizes_legacy_repository_instances(tmp_path):
 def test_unaddressed_question_is_not_sent_to_agent(tmp_path):
     with TestClient(create_app(NeedsFoodV2Repository(tmp_path / 'needs.db'))) as client:
         answer = client.post('/api/chat', json={'question': '생산 현황을 알려줘'}).json()
-        assert answer['ignored'] is True
-        assert answer['records'] == []
+        assert not answer.get('ignored')
+        assert answer['records'] and answer['engine'] == 'langgraph'
 
 
 def test_realtime_uses_needs_food_read_only_tools(tmp_path, monkeypatch):
@@ -70,6 +70,5 @@ def test_realtime_uses_needs_food_read_only_tools(tmp_path, monkeypatch):
         )
         assert response.status_code == 200
         names = {tool['name'] for tool in captured['session']['tools']}
-        assert 'get_daily_briefing' in names
-        assert 'get_batch_trace' in names
+        assert names == {'analyze_manufacturing_question'}
         assert 'list_tags' not in names

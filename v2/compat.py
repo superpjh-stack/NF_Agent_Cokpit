@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from needs_agent import ManufacturingAgent, NeedsFoodRepository, NeedsFoodToolRegistry
 QUESTION_GROUPS = {
-    "생산·품질": [
+    "데이터 대시보드": [
         "2026-09-03 생산 현황과 진척률을 알려줘",
         "2026-09-03 지연된 생산 배치를 알려줘",
         "B-20260903-M002-02 배치의 조리 측정값을 확인해줘",
@@ -18,7 +18,7 @@ QUESTION_GROUPS = {
         "오늘 들어온 원료와 입고 수량·현재 재고를 알려줘",
         "오늘 출하계획과 실제 출하량의 차이를 알려줘",
     ],
-    "문서·규칙": [
+    "지식베이스": [
         "니즈푸드 제조 지식문서에서 원료 입고 절차를 찾아줘",
         "생산 지연 시 담당자 확인 규칙은 뭐야?",
         "검식 주의 결과를 전체 배치 합격으로 볼 수 있어?",
@@ -31,6 +31,9 @@ QUESTION_GROUPS = {
         "등록 문서와 데모 데이터의 차이를 알려줘",
     ],
 }
+
+from v2.compound import COMPOUND_QUESTIONS
+QUESTION_GROUPS["복합질문"] = COMPOUND_QUESTIONS
 
 class NeedsFoodV2Repository:
     TABLES = {"menus":"메뉴 계획", "production_batches":"생산 배치", "cooking_readings":"조리 측정", "quality_checks":"품질·검식", "inventory":"원료 재고", "shipments":"출하", "equipment_events":"설비 이벤트", "rules":"확인 규칙", "knowledge_documents":"지식 문서"}

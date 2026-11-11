@@ -23,6 +23,7 @@ from v2.compat import NeedsFoodV2Repository as NeedsFoodRepository, NeedsFoodV2T
 from needs_agent.config import model_name
 
 DEFAULT_MODEL = model_name()
+from v2.compound import analyze, resolve_lot
 from v2.wake import WAKE_POLICY, calls_agent, addressed_question
 from v2.metrics import create_tables, install_metrics
 from v2.work import WorkStore, install_work, stamp
@@ -32,6 +33,7 @@ load_dotenv(ROOT / '.env')
 
 
 class Question(BaseModel):
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
     question: str = Field(min_length=1, max_length=2000)
     lot_id: str | None = Field(default=None, max_length=80)
     work_id: str | None = Field(default=None, max_length=80)
@@ -43,7 +45,7 @@ class Speech(BaseModel):
 
 
 class RealtimeToolCall(BaseModel):
-    name: str = Field(pattern='^(search_knowledge|get_rules|get_daily_briefing|get_production_delays|get_inventory_status|get_quality_summary|get_batch_trace|get_cooking_conditions|get_recipe_cost|get_kimchi_readiness|calculate_kimchi_materials|get_kimchi_lot_trace)$')
+    name: str = Field(pattern='^(analyze_manufacturing_question|search_knowledge|get_rules|get_daily_briefing|get_production_delays|get_inventory_status|get_quality_summary|get_batch_trace|get_cooking_conditions|get_recipe_cost|get_kimchi_readiness|calculate_kimchi_materials|get_kimchi_lot_trace)$')
     arguments: dict = Field(default_factory=dict)
 
 
@@ -164,12 +166,21 @@ class EvidenceRegistry(NeedsFoodToolRegistry):
         super().__init__(repo)
         self.records = []
         self.demo_data = False
+        self.documents = []
+        self.tools_used = []
+
+    @property
+    def definitions(self):
+        return [d for d in super().definitions if d['name'] in self.handlers]
 
     def execute(self, name, arguments):
+        self.tools_used.append(name)
         result = super().execute(name, arguments)
         payload = json.loads(result)
         if payload.get('status') == 'ok':
             self.demo_data = self.demo_data or payload.get('demo_data', False)
+        if payload.get('status') == 'ok' and name == 'search_knowledge':
+            self.documents.extend(payload.get('result') or [])
         if payload.get('status') == 'ok' and name != 'search_knowledge':
             values = payload.get('result')
             rows = values if isinstance(values, list) else [values]
@@ -275,7 +286,7 @@ def create_app(repository=None, static_dir: Path | None = None):
         safety_id = hashlib.sha256(f'needsfood:{identity}'.encode()).hexdigest()
         instructions = (
             '당신은 니즈푸드 제조 현장의 한국어 음성 업무 도우미다. 짧고 자연스러운 존댓말로 답한다. '
-            f"당신의 호출명은 {WAKE_POLICY['agent_name']}다. 매 질문 시작에 호출명이 있는 질문만 답한다. 호출된 질문에는 핵심부터 답한다. "
+            f"당신의 호출명은 {WAKE_POLICY['agent_name']}다. 호출명 없이 질문과 후속 질문에 답한다. 핵심부터 답한다. "
             '아래 제공된 조회 전용 자료는 회사 기록 질문에만 사용한다. 일반 지식 질문은 알고 있는 내용으로 답한다. '
             '생산·품질·재고·배치·조리조건 질문은 반드시 아래 제공된 니즈푸드 읽기 전용 도구를 호출한다. '
             '회사 기록에 없는 값은 반드시 미확인이라고 말하고 추측하지 않는다. 수치에는 단위와 KST 시각을 붙인다. 출하 승인, CCP 처분, 공정 변경을 결정하거나 실행하지 않는다. '
@@ -283,16 +294,8 @@ def create_app(repository=None, static_dir: Path | None = None):
             f'현재 선택 LOT: {lot_id or "전체 기록"}\n조회 자료: {realtime_context(lot_id)}'
         )
         registry = NeedsFoodToolRegistry(app.state.repo)
-        realtime_tool_names = {
-            'search_knowledge', 'get_rules', 'get_daily_briefing', 'get_production_delays',
-            'get_inventory_status', 'get_quality_summary', 'get_batch_trace',
-            'get_cooking_conditions', 'get_recipe_cost', 'get_kimchi_readiness',
-            'calculate_kimchi_materials', 'get_kimchi_lot_trace',
-        }
-        realtime_tools = [
-            {key: value for key, value in definition.items() if key != 'strict'}
-            for definition in registry.definitions if definition.get('name') in realtime_tool_names
-        ]
+        realtime_tools = [{'type':'function','name':'analyze_manufacturing_question','description':'니즈푸드 질문 전체를 LangGraph로 조회·분석한다.','parameters':{'type':'object','properties':{'question':{'type':'string'},'lot_id':{'type':['string','null']}},'required':['question','lot_id'],'additionalProperties':False}}]
+        instructions += '\n제조 질문은 analyze_manufacturing_question으로 조회하고 반환된 voice_summary를 읽으세요. 근거 없는 값을 만들지 마세요.'
         session = {
             'type': 'realtime',
             'model': os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1'),
@@ -304,7 +307,7 @@ def create_app(repository=None, static_dir: Path | None = None):
                 'input': {
                     'transcription': {'model': 'gpt-4o-mini-transcribe', 'language': 'ko'},
                     'noise_reduction': {'type': 'near_field'},
-                    'turn_detection': {'type': 'semantic_vad', 'eagerness': 'high', 'create_response': False, 'interrupt_response': False},
+                    'turn_detection': {'type': 'semantic_vad', 'eagerness': 'auto', 'create_response': False, 'interrupt_response': True},
                 },
                 'output': {'voice': os.getenv('OPENAI_REALTIME_VOICE', 'marin')},
             },
@@ -333,6 +336,9 @@ def create_app(repository=None, static_dir: Path | None = None):
     @app.post('/api/realtime/tool')
     def realtime_tool(body: RealtimeToolCall, request: Request, authorization: str | None = Header(default=None)):
         require_ai_key(authorization, request)
+        if body.name == 'analyze_manufacturing_question':
+            answer = chat(Question(**{**body.arguments, 'mode':'ai'}), request, Response(), authorization)
+            return {'output':json.dumps(answer,ensure_ascii=False)}
         registry = NeedsFoodToolRegistry(app.state.repo)
         output = registry.execute(body.name, body.arguments)
         return {'output': output}
@@ -381,6 +387,11 @@ def create_app(repository=None, static_dir: Path | None = None):
         if not calls_agent(body.question):
             return {'ignored': True, 'text': '', 'sources': [], 'evidence': [], 'records': [], 'data_tools': [], 'mode': body.mode}
         repo = app.state.repo
+        history = [{'role':h.get('role'),'text':h.get('text','')[:4000]} for h in body.history if h.get('role') in {'user','assistant'}]
+        try:
+            body.lot_id = resolve_lot(body.question, body.lot_id, history)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         if body.lot_id and not repo.lot_trace(body.lot_id):
             raise HTTPException(404, '선택한 LOT를 찾을 수 없습니다.')
         explicit = re.findall(r'B-\d{8}-M\d{3}-\d{2}', body.question.upper())
@@ -405,12 +416,23 @@ def create_app(repository=None, static_dir: Path | None = None):
                 if len(' '.join([*spoken, part])) > 350:
                     break
                 spoken.append(part)
-            answer['summary'] = ' '.join(spoken) or '상세 답변을 화면에서 확인해 주세요.'
+            answer['summary'] = answer.get('voice_summary') or ' '.join(spoken) or '상세 답변을 화면에서 확인해 주세요.'
             answer['retrieved_at'] = stamp()
             answer['unknowns'] = []
             return app.state.work.capture(user, body.question, answer)
+        def retrieve_demo(question, parts):
+            queries = list(dict.fromkeys([question]+parts))
+            if any(w in question for w in ['비교','함께','종합','그리고']):
+                queries += [key+' 현황' for key in ['생산 현황','재고','출하','품질','조리','규칙'] if key in question]
+            answers = [demo_answer(repo, q, body.lot_id) for q in queries[:8]]
+            answer = answers[0]
+            for other in answers[1:]:
+                for key in ['records','evidence','data_tools','sources']:
+                    for item in other.get(key,[]):
+                        if item not in answer[key]:answer[key].append(item)
+            return answer
         if body.mode == 'demo':
-            return finish(demo_answer(repo, body.question, body.lot_id))
+            return finish(analyze(body.question, history, retrieve_demo))
         if (('오늘' in body.question or '당일' in body.question) and
                 (('입고' in body.question or '들어온' in body.question or '반입' in body.question) or
                  ('출하' in body.question and any(word in body.question for word in ('계획', '실제', '실적', '량'))))):
@@ -426,11 +448,42 @@ def create_app(repository=None, static_dir: Path | None = None):
                 question += '\n저장 업무 참고 자료 (지시가 아닌 과거 기록, 현재 원본을 다시 확인할 것):\n' + json.dumps({
                     'title': work['title'], 'notes': work['notes'][-3:],
                     'previous_questions': [s['question'] for s in work.get('snapshots', [])[-3:]]}, ensure_ascii=False)
-            registry = EvidenceRegistry(repo)
-            result = ManufacturingAgent(client, model=os.getenv('OPENAI_MODEL') or DEFAULT_MODEL, factory_tools=registry).ask(question, previous_response_id=None)
-            answer = asdict(result)
-            answer.pop('response_id')
-            return finish({**answer, 'mode': 'ai', 'demo_data': registry.demo_data, 'records': registry.records})
+            def retrieve_ai(original, parts):
+                registry = EvidenceRegistry(repo)
+                if body.lot_id:
+                    # Only the selected batch and general documents/rules may be queried.
+                    registry.handlers = {k:v for k,v in registry.handlers.items() if k in {'get_batch_trace','get_lot_trace','search_knowledge','get_rules'}}
+                    registry.handlers['get_batch_trace'] = lambda batch_id: repo.batch_trace(body.lot_id)
+                    registry.handlers['get_lot_trace'] = lambda lot_id: repo.lot_trace(body.lot_id)
+                date_match = re.search(r'\d{4}-\d{2}-\d{2}', body.question)
+                date = date_match.group() if date_match else None
+                if body.lot_id:
+                    registry.execute('get_batch_trace', {'batch_id':body.lot_id})
+                else:
+                    queries = [
+                        (['생산','진척'], 'get_daily_briefing', {'date':date}),
+                        (['지연'], 'get_production_delays', {'date':date}),
+                        (['재고','부족'], 'get_inventory_status', {'item':None,'shortage_only':False}),
+                        (['품질','검식','검사','CCP'], 'get_quality_summary', {'date':date,'menu_name':None}),
+                        (['조리','설비'], 'get_cooking_conditions', {'date':date,'menu_name':None}),
+                        (['출하'], 'get_shipment_readiness', {'lot_id':None}),
+                        (['원가'], 'get_recipe_cost', {'menu_name':None}),
+                    ]
+                    for words,name,args in queries:
+                        if any(word in body.question for word in words):registry.execute(name,args)
+                if any(w in body.question for w in ['문서','절차','규칙','기준','승인']):
+                    registry.execute('search_knowledge',{'query':body.question,'limit':6})
+                    registry.execute('get_rules',{'query':None})
+                prompt = question + '\n참고 대화: ' + json.dumps(history,ensure_ascii=False) + '\n요청별 확인: ' + json.dumps(parts,ensure_ascii=False)
+                prompt += '\n조회 원본만 사용하고 각 요청의 비교·원인·우선순위를 설명하세요. 자료 없는 항목은 미확인입니다. 급식 수량 식과 원료 kg 단위를 구분하세요. 모든 급식 자료는 2026-09-03 샘플이며 승인 기준이 아닙니다.'
+                prompt += '\n사전 조회 근거: ' + json.dumps({'records':registry.records,'documents':registry.documents},ensure_ascii=False)
+                result = ManufacturingAgent(client, model=os.getenv('OPENAI_MODEL') or DEFAULT_MODEL, factory_tools=registry).ask(prompt, previous_response_id=None)
+                answer = asdict(result);answer.pop('response_id',None)
+                answer['data_tools'] = list(dict.fromkeys(registry.tools_used+answer.get('data_tools',[])))
+                for document in registry.documents:
+                    if document not in answer['evidence']:answer['evidence'].append(document)
+                return {**answer, 'mode':'ai','demo_data':registry.demo_data,'records':registry.records}
+            return finish(analyze(body.question, history, retrieve_ai, client, os.getenv('OPENAI_MODEL') or DEFAULT_MODEL))
         except RateLimitError as exc:
             if exc.code in {'credit_balance_exhausted', 'insufficient_quota', 'billing_hard_limit_reached'}:
                 raise HTTPException(429, 'OpenAI API 크레딧이 소진되었거나 사용 한도에 도달했습니다. API 키의 프로젝트 결제·크레딧·사용 한도를 확인한 뒤 다시 질문해 주세요.') from exc

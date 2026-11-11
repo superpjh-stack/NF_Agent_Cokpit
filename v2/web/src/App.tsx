@@ -5,7 +5,7 @@ import {request, type Document, type Row, type Workspace} from './types';
 
 type LibraryTab = 'knowledge' | 'data';
 type SidePanel = 'library' | 'questions' | null;
-type RecommendationTab = '생산·품질' | '문서·규칙';
+type RecommendationTab = '데이터 대시보드' | '지식베이스' | '복합질문';
 
 function Modal({title, onClose, children}:{title:string; onClose:()=>void; children:ReactNode}) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -27,7 +27,7 @@ export default function App() {
   const [tableError, setTableError] = useState('');
   const [tableLoading, setTableLoading] = useState(false);
   const [libraryTab, setLibraryTab] = useState<LibraryTab>('knowledge');
-  const [recommendationTab, setRecommendationTab] = useState<RecommendationTab>('생산·품질');
+  const [recommendationTab, setRecommendationTab] = useState<RecommendationTab>('데이터 대시보드');
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [search, setSearch] = useState('');
   const [selectedDocument, setSelectedDocument] = useState<Document|null>(null);
@@ -48,7 +48,7 @@ export default function App() {
       .catch(reason => setError(reason.message)).finally(() => setLoading(false));
   }
   useEffect(load, []);
-  useEffect(() => { if(data) document.title = `${data.meta.wake.agent_name} · 니즈푸드 업무 도우미`; }, [data?.meta.wake.agent_name]);
+  useEffect(() => { if(data) document.title = '니즈푸드 에이전트'; }, [data?.meta.wake.agent_name]);
   useEffect(() => {
     if (!data || libraryTab !== 'data') return;
     const controller = new AbortController();
@@ -75,7 +75,7 @@ export default function App() {
 
   return <div className="needsfood-app">
     <header className="app-header">
-      <div className="brand"><span className="brand-mark"><Leaf size={22}/></span><div><strong>니즈푸드 제조 AI</strong><small>생산 · 품질 · 납품</small></div></div>
+      <div className="brand"><span className="brand-mark"><Leaf size={22}/></span><div><strong>니즈푸드 에이전트</strong><small>생산 · 품질 · 납품</small></div></div>
       <div className="record-status"><span>{data.meta.demo_data ? '샘플 기록 기준' : '기록 기준일'}</span><strong>{data.meta.as_of}</strong></div>
       <div className="header-actions"><button className="mobile-panel-button" onClick={() => setSidePanel('library')}><Menu size={18}/>자료</button><button className="mobile-panel-button" onClick={() => setSidePanel('questions')}><Sparkles size={18}/>질문</button><button className="icon-button" aria-label="데이터 새로고침" onClick={load}><RefreshCw size={18}/></button><button className="settings-button" onClick={() => { setTokenDraft(token); setSettings(true); }}><Settings2 size={17}/>연결 설정</button></div>
     </header>
@@ -83,16 +83,16 @@ export default function App() {
     {sidePanel && <button className="panel-backdrop" aria-label="패널 닫기" onClick={() => setSidePanel(null)}/>}
     <div className="workspace-grid">
       <aside className={`question-panel ${sidePanel === 'questions' ? 'mobile-open' : ''}`}>
-        <div className="side-heading"><div><span>질문</span><h2>후보 질문과 이력</h2></div><button className="icon-button mobile-close" aria-label="질문 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
+        <div className="side-heading"><div><span>질문</span><h2>추천질문리스트</h2></div><button className="icon-button mobile-close" aria-label="질문 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
         <section className="history-section"><h3><History size={17}/>최근 질문 <span>{history.length}</span></h3>{history.length ? <div className="history-list">{history.map((question, index) => <button key={`${question}-${index}`} onClick={() => ask(question)}><span>{question}</span><ChevronRight size={15}/></button>)}</div> : <p className="empty-note">이 세션에서 질문하면 여기에 쌓입니다.</p>}</section>
-        <section className="recommend-section"><h3><Sparkles size={17}/>질문 예시</h3><div className="recommend-tabs" role="tablist" aria-label="질문 예시 분류"><button role="tab" aria-selected={recommendationTab === '생산·품질'} className={recommendationTab === '생산·품질' ? 'active' : ''} onClick={() => setRecommendationTab('생산·품질')}>생산·품질</button><button role="tab" aria-selected={recommendationTab === '문서·규칙'} className={recommendationTab === '문서·규칙' ? 'active' : ''} onClick={() => setRecommendationTab('문서·규칙')}>문서·규칙</button></div><ol>{recommendations.map((question, index) => <li key={question}><button onClick={() => ask(question)}><span>{String(index + 1).padStart(2, '0')}</span>{question}</button></li>)}</ol></section>
+        <section className="recommend-section"><h3><Sparkles size={17}/>추천 질문</h3><div className="recommend-tabs" role="tablist" aria-label="질문 예시 분류">{(['데이터 대시보드','지식베이스','복합질문'] as RecommendationTab[]).map(tab=><button key={tab} role="tab" aria-selected={recommendationTab===tab} className={recommendationTab===tab?'active':''} onClick={()=>setRecommendationTab(tab)}>{tab}</button>)}</div><ol>{recommendations.map((question, index) => <li key={question}><button onClick={() => ask(question)}><span>{String(index + 1).padStart(2, '0')}</span>{question}</button></li>)}</ol></section>
       </aside>
       <main className="conversation-panel"><Assistant ref={assistant} data={data} token={token} user={null} lot={contextLot} onLot={setContextLot} onSettings={() => { setTokenDraft(token); setSettings(true); }} onSave={() => setSettings(true)} work={null} open={false} onClose={() => {}} onQuestion={rememberQuestion}/></main>
 
       <aside className={`library-panel ${sidePanel === 'library' ? 'mobile-open' : ''}`}>
         <div className="side-heading"><div><span>연결된 자료</span><h2>지식베이스 · DB</h2></div><button className="icon-button mobile-close" aria-label="자료 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
         <div className="library-tabs" role="tablist"><button role="tab" aria-selected={libraryTab === 'knowledge'} className={libraryTab === 'knowledge' ? 'active' : ''} onClick={() => setLibraryTab('knowledge')}><BookOpen size={17}/>지식베이스</button><button role="tab" aria-selected={libraryTab === 'data'} className={libraryTab === 'data' ? 'active' : ''} onClick={() => setLibraryTab('data')}><Database size={17}/>데이터허브</button></div>
-        {libraryTab === 'knowledge' ? <><label className="side-search"><Search size={16}/><span className="sr-only">문서 검색</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="문서명 또는 공정 검색"/></label><p className="source-note">샘플 지식베이스 {documents.length}개 · 미승인 예시</p><div className="document-list">{filteredDocuments.map(document => <button key={document.document_id} onClick={() => setSelectedDocument(document)}><FileText size={18}/><span><strong>{document.title || cleanDocumentName(document.filename)}</strong><small>{document.status}</small></span><ChevronRight size={16}/></button>)}</div>{!filteredDocuments.length && <p className="empty-note">검색 결과가 없습니다. 다른 단어로 찾아보세요.</p>}</> : <><label className="table-picker">조회할 데이터<select value={selectedTable} onChange={event => setSelectedTable(event.target.value)}>{data.tables.map(table => <option key={table.table} value={table.table}>{table.label} ({table.count})</option>)}</select></label><p className="source-note">기록을 선택하면 {data.meta.wake.agent_name}에게 질문합니다</p><div className="data-preview"><div><Table2 size={18}/><strong>{activeTable?.label}</strong><span>{activeTable?.count ?? 0}건</span></div>{tableLoading && <p className="empty-note" role="status">기록을 불러오는 중입니다.</p>}{tableError && <p className="empty-note" role="alert">{tableError}</p>}{!tableLoading && !tableError && !rows.length && <p className="empty-note">등록된 기록이 없습니다.</p>}{rows.slice(0, 10).map((row, index) => <button key={index} onClick={() => ask(`${data.meta.wake.agent_name}, ${String(row.lot_id ?? row.batch_id ?? row.material_name ?? row.menu_name ?? row.item_name ?? row.name ?? activeTable?.label)} 기록을 확인해줘`)}><span>{String(row.lot_id ?? row.batch_id ?? row.material_name ?? row.menu_name ?? row.item_name ?? row.name ?? `기록 ${index + 1}`)}</span><ChevronRight size={15}/></button>)}</div></>}
+        {libraryTab === 'knowledge' ? <><label className="side-search"><Search size={16}/><span className="sr-only">문서 검색</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="문서명 또는 공정 검색"/></label><p className="source-note">샘플 지식베이스 {documents.length}개 · 미승인 예시</p><div className="document-list">{filteredDocuments.map(document => <button key={document.document_id} onClick={() => setSelectedDocument(document)}><FileText size={18}/><span><strong>{document.title || cleanDocumentName(document.filename)}</strong><small>{document.status}</small></span><ChevronRight size={16}/></button>)}</div>{!filteredDocuments.length && <p className="empty-note">검색 결과가 없습니다. 다른 단어로 찾아보세요.</p>}</> : <><label className="table-picker">조회할 데이터<select value={selectedTable} onChange={event => setSelectedTable(event.target.value)}>{data.tables.map(table => <option key={table.table} value={table.table}>{table.label} ({table.count})</option>)}</select></label><p className="source-note">기록을 선택하면 {data.meta.wake.agent_name}에게 질문합니다</p><div className="data-preview"><div><Table2 size={18}/><strong>{activeTable?.label}</strong><span>{activeTable?.count ?? 0}건</span></div>{tableLoading && <p className="empty-note" role="status">기록을 불러오는 중입니다.</p>}{tableError && <p className="empty-note" role="alert">{tableError}</p>}{!tableLoading && !tableError && !rows.length && <p className="empty-note">등록된 기록이 없습니다.</p>}{rows.slice(0, 10).map((row, index) => <button key={index} onClick={() => ask(`${String(row.lot_id ?? row.batch_id ?? row.material_name ?? row.menu_name ?? row.item_name ?? row.name ?? activeTable?.label)} 기록을 확인해줘`)}><span>{String(row.lot_id ?? row.batch_id ?? row.material_name ?? row.menu_name ?? row.item_name ?? row.name ?? `기록 ${index + 1}`)}</span><ChevronRight size={15}/></button>)}</div></>}
       </aside>
     </div>
 

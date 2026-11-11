@@ -90,4 +90,4 @@ def test_ai_answer_using_sample_records_remains_sample(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()['mode'] == 'ai'
     assert response.json()['demo_data'] is True
-    assert response.json()['records'][0]['unit'] == '식'
+    assert any(row.get('unit') == '식' for row in response.json()['records'])
