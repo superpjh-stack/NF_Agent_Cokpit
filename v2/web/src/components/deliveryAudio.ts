@@ -2,7 +2,7 @@
 let context:AudioContext|null=null;
 let current:{gain:GainNode;sources:OscillatorNode[];nodes:AudioNode[]}|null=null;
 export function deliverySoundEnabled(){try{return localStorage.getItem('needsfood_delivery_sound')!=='off'}catch{return true}}
-export function rememberDeliverySound(enabled:boolean){try{localStorage.setItem('needsfood_delivery_sound',enabled?'on':'off')}catch{/* optional preference */}}
+export function rememberDeliverySound(enabled:boolean){if(!enabled)cancelAnswerChime();try{localStorage.setItem('needsfood_delivery_sound',enabled?'on':'off')}catch{/* optional preference */}}
 export function primeDeliveryAudio(){
  if(!deliverySoundEnabled())return;
  try{context??=new AudioContext();if(context.state==='suspended')void context.resume().catch(()=>{})}catch{/* Audio is optional. */}
@@ -27,4 +27,29 @@ export function stopDeliveryAudio(){
  voice.gain.gain.cancelScheduledValues(now);voice.gain.gain.setTargetAtTime(0,now,.1);
  voice.sources.forEach(source=>{try{source.stop(now+.42)}catch{/* already stopped */}});
  setTimeout(()=>{voice.sources.forEach(source=>source.disconnect());voice.nodes.forEach(node=>node.disconnect())},470);
+}
+
+let chimeTimer:ReturnType<typeof setTimeout>|null=null;
+let chime:{gain:GainNode;sources:OscillatorNode[]}|null=null;
+export function cancelAnswerChime(){
+ if(chimeTimer!==null){clearTimeout(chimeTimer);chimeTimer=null}
+ if(!chime||!context)return;
+ const old=chime;chime=null;const now=context.currentTime;
+ old.gain.gain.cancelScheduledValues(now);old.gain.gain.setTargetAtTime(0,now,.025);
+ old.sources.forEach(source=>{try{source.stop(now+.1)}catch{/* already ended */}});
+ setTimeout(()=>{old.sources.forEach(source=>source.disconnect());old.gain.disconnect()},150);
+}
+/** One soft bell after the engine fades. Re-check state before sounding. */
+export function playAnswerChime(allowed:()=>boolean){
+ cancelAnswerChime();stopDeliveryAudio();
+ if(!deliverySoundEnabled())return;
+ chimeTimer=setTimeout(()=>{
+  chimeTimer=null;
+  if(!allowed()||document.hidden||!deliverySoundEnabled()||!context||context.state!=='running')return;
+  const ctx=context,now=ctx.currentTime,gain=ctx.createGain();
+  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.055,now+.012);gain.gain.exponentialRampToValueAtTime(.0001,now+1.05);gain.connect(ctx.destination);
+  const sources=[880,1760].map(frequency=>{const source=ctx.createOscillator();source.type='sine';source.frequency.value=frequency;source.connect(gain);source.start(now);source.stop(now+1.1);return source});
+  const playing={gain,sources};chime=playing;
+  setTimeout(()=>{sources.forEach(source=>source.disconnect());gain.disconnect();if(chime===playing)chime=null},1200);
+ },440);
 }

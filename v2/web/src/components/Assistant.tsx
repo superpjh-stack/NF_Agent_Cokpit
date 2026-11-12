@@ -5,27 +5,29 @@ import {type Answer,type Workspace,type User,type WorkItem} from '../types';
 import {useRealtimeVoice} from '../hooks/useRealtimeVoice';
 import ReportPanel from './ReportPanel';
 import DeliveryWaiting from './DeliveryWaiting';
-import {primeDeliveryAudio} from './deliveryAudio';
+import {primeDeliveryAudio,playAnswerChime,cancelAnswerChime} from './deliveryAudio';
 export type AssistantHandle={ask:(text:string,lot?:string)=>void;prepare:(text:string,lot?:string)=>void;focus:()=>void};
 type Props={data:Workspace;token:string;active?:boolean;lot:string;onLot:(lot:string)=>void;onSettings:()=>void;onQuestion?:(q:string)=>void;user:User|null;work:WorkItem|null;open:boolean;onClose:()=>void;onSave:(answer:Answer,q:string)=>void};
 type Message={role:'user'|'assistant';text:string;answer?:Answer;lot?:string};
 export const Assistant=forwardRef<AssistantHandle,Props>(function Assistant({data,token,active=true,lot,onLot,onSettings,onQuestion},ref){
  const [messages,setMessages]=useState<Message[]>([]),[text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const activeNow=useRef(active);activeNow.current=active;
  const pending=useRef<AbortController|null>(null),epoch=useRef(0),input=useRef<HTMLTextAreaElement>(null),scroll=useRef<HTMLDivElement>(null),anchor=useRef(-1),context=useRef(lot);
  const voice=useRealtimeVoice(token,lot,turn=>setMessages(old=>[...old,turn]),(_name,output)=>{try{const a=JSON.parse(output) as Answer;if(a.text)setMessages(old=>[...old,{role:'assistant',text:a.text,answer:a}])}catch{/* malformed output isn't evidence */}});
- useEffect(()=>{if(!active)voice.stop()},[active,voice.stop]);
+ useEffect(()=>{if(!active){voice.stop();cancelAnswerChime()}},[active,voice.stop]);
+ useEffect(()=>{const hide=()=>{if(document.hidden)cancelAnswerChime()};document.addEventListener('visibilitychange',hide);return()=>document.removeEventListener('visibilitychange',hide)},[]);
  useEffect(()=>{context.current=lot},[lot]);
  useEffect(()=>{epoch.current++;pending.current?.abort();pending.current=null;setBusy(false);setMessages([]);setError('');voice.stop()},[token]);
- useEffect(()=>()=>{epoch.current++;pending.current?.abort()},[]);
+ useEffect(()=>()=>{epoch.current++;pending.current?.abort();cancelAnswerChime()},[]);
  useEffect(()=>{if(!active||!scroll.current)return;const node=scroll.current;let user=-1;messages.forEach((m,i)=>{if(m.role==='user')user=i});const first=messages.findIndex((m,i)=>i>user&&m.role==='assistant');const index=first>=0?first:user;if(index<0||anchor.current===index)return;const target=node.querySelectorAll<HTMLElement>('.nf-message')[index];if(target){anchor.current=index;node.scrollTop+=target.getBoundingClientRect().top-node.getBoundingClientRect().top-16}},[messages,active]);
- function reset(){epoch.current++;pending.current?.abort();pending.current=null;setBusy(false);setMessages([]);setText('');setError('');anchor.current=-1;voice.stop();input.current?.focus()}
+ function reset(){cancelAnswerChime();epoch.current++;pending.current?.abort();pending.current=null;setBusy(false);setMessages([]);setText('');setError('');anchor.current=-1;voice.stop();input.current?.focus()}
  async function ask(question:string,selected=lot){
   question=question.trim();if(!question||pending.current||voice.active)return;
-  primeDeliveryAudio();
+  cancelAnswerChime();primeDeliveryAudio();
   const history=selected===context.current?messages.slice(-12).map(({role,text})=>({role,text:text.slice(0,4000)})):[];
   context.current=selected;if(selected!==lot)onLot(selected);
   const run=++epoch.current,c=new AbortController();pending.current=c;setBusy(true);setError('');setText('');setMessages(old=>[...old,{role:'user',text:question,lot:selected}]);onQuestion?.(question);
-  try{const a=await apiRequest<Answer>('/chat',{method:'POST',signal:c.signal,body:JSON.stringify({question,lot_id:selected||null,mode:data.meta.ai_configured?'ai':'demo',history})},token);if(run===epoch.current&&!a.ignored)setMessages(old=>[...old,{role:'assistant',text:a.text,answer:a,lot:selected}])}
+  try{const a=await apiRequest<Answer>('/chat',{method:'POST',signal:c.signal,body:JSON.stringify({question,lot_id:selected||null,mode:data.meta.ai_configured?'ai':'demo',history})},token);if(run===epoch.current&&!a.ignored){setMessages(old=>[...old,{role:'assistant',text:a.text,answer:a,lot:selected}]);playAnswerChime(()=>run===epoch.current&&activeNow.current)}}
   catch(e){if(run===epoch.current&&(e as Error).name!=='AbortError'){setError((e as Error).message);setText(question)}}finally{if(run===epoch.current){pending.current=null;setBusy(false)}}
  }
  useImperativeHandle(ref,()=>({ask:(q,l)=>{void ask(q,l)},prepare:(q,l)=>{setText(q);if(l!==undefined)onLot(l);input.current?.focus()},focus:()=>input.current?.focus()}));
