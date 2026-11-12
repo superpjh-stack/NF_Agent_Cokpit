@@ -1,3 +1,4 @@
+import type {ReportData,ReportKind} from './components/ReportPanel';
 import {apiPath} from './apiPath';
 import type {WakePolicy} from './wake';
 export type Row = Record<string, string | number | null>;
@@ -9,12 +10,8 @@ export type TableInfo = {table:string;label:string;count:number;exists:boolean};
 export type Workspace = {kpi: Record<string,number>;lots:Lot[];fermentation:Fermentation[];ccp:Row[];inventory:Row[];shipments:Row[];rules:Rule[];tables:TableInfo[];questions:Record<string,string[]>;meta:{wake:WakePolicy;company:string;version:string;demo_data:boolean;as_of:string;backend:string;ai_configured:boolean;local_dev_ai?:boolean;model:string;retrieved_at:string}};
 export type Detail = {lot:Lot;trace:Lot[];fermentation:Fermentation[];ccp:Row[];shipments:Row[];measurements:Row[]};
 export type Evidence = {filename:string;document_id?:string;text:string};
-export type Answer = {voice_summary?:string;request_coverage?:{request:string;status:string}[];comparison_tables?:{title:string;columns:string[];rows:string[][]}[];ignored?:boolean;answer_id?:string;captured_at?:string;summary?:string;retrieved_at?:string;context?:{lot_id:string|null;as_of:string};unknowns?:string[];text:string;sources:string[];evidence:Evidence[];data_tools:string[];records:Row[];searched_documents:boolean;mode:'ai'|'demo';demo_data?:boolean};
-export async function request<T>(path:string, init?:RequestInit):Promise<T> {
- const response = await fetch(apiPath('/api'+path), init);
- if (!response.ok) {const data = await response.json().catch(()=>({})); throw new Error(typeof data.detail === 'string' ? data.detail : `요청을 처리하지 못했습니다 (${response.status}).`);}
- return response.json();
-}
+export type Answer = {report?:ReportData;report_picker?:ReportKind;report_lot?:string|null;voice_summary?:string;request_coverage?:{request:string;status:string}[];comparison_tables?:{title:string;columns:string[];rows:string[][]}[];ignored?:boolean;answer_id?:string;captured_at?:string;summary?:string;retrieved_at?:string;context?:{lot_id:string|null;as_of:string};unknowns?:string[];text:string;sources:string[];evidence:Evidence[];data_tools:string[];records:Row[];searched_documents:boolean;mode:'ai'|'demo';demo_data?:boolean};
+export {apiRequest as request} from './apiClient';
 
 export type User={id:string;username:string;name:string;organization:string;role:'operator'|'reviewer'|'admin'};
 export type WorkItem={id:string;title:string;lot_id:string|null;kind:string;status:string;creator_id:string;assignee_id:string;version:number;created_at:string;updated_at:string;snapshot:{question:string;answer:Answer}|null;snapshots?:{question:string;answer:Answer}[];notes:{text:string;author:string;at:string}[];events:{action:string;actor:string;at:string;request_id:string}[];handoff:{sender_id:string;recipient_id:string;request:string;sent_at:string;acknowledged_at:string|null}|null};

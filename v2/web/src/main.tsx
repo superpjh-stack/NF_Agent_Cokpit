@@ -4,3 +4,5 @@ import App from './App';
 import './styles.css';
 import './customer.css';
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+
+import './v3.css';

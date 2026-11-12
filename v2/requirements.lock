@@ -53,3 +53,8 @@ uvicorn==0.52.4
 websockets==17.4
 xxhash==4.1.0
 zstandard==0.25.0
+
+openpyxl==3.1.5
+reportlab==4.4.10
+et-xmlfile==2.0.0
+pillow==13.0.0

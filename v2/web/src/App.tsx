@@ -1,5 +1,7 @@
 import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {BookOpen, ChevronRight, CircleAlert, Database, FileText, History, Leaf, LoaderCircle, Menu, RefreshCw, Search, Settings2, Sparkles, Table2, X} from 'lucide-react';
+import FoodStudio from './components/FoodStudio';
+import ReportPanel,{reportTitles} from './components/ReportPanel';
 import {Assistant, type AssistantHandle} from './components/Assistant';
 import {request, type Document, type Row, type Workspace} from './types';
 
@@ -18,6 +20,7 @@ function Modal({title, onClose, children}:{title:string; onClose:()=>void; child
 const cleanDocumentName = (filename:string) => filename.replace(/^NF-KB-\d+_/, '').replace(/\.md$/, '').replaceAll('_', ' ');
 
 export default function App() {
+  const [view,setView]=useState<'chat'|'studio'|'reports'>('chat');
   const assistant = useRef<AssistantHandle>(null);
   const [data, setData] = useState<Workspace|null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -35,6 +38,7 @@ export default function App() {
   const [contextLot, setContextLot] = useState('');
   const [token, setToken] = useState(() => sessionStorage.getItem('needsfood_access_token') || '');
   const [settings, setSettings] = useState(false);
+  const [checking,setChecking]=useState(false),[connectionResult,setConnectionResult]=useState('');
   const [tokenDraft, setTokenDraft] = useState('');
   const [history, setHistory] = useState<string[]>(() => {
     try { const stored:unknown = JSON.parse(sessionStorage.getItem('needsfood_question_history') || '[]'); return Array.isArray(stored) ? stored.filter((item):item is string => typeof item === 'string').slice(0,20) : []; }
@@ -67,7 +71,7 @@ export default function App() {
   const recommendations = useMemo(() => data?.questions[recommendationTab]?.slice(0, 10) ?? [], [data, recommendationTab]);
   const filteredDocuments = documents.filter(document => `${document.title ?? ''} ${document.filename} ${document.content}`.toLowerCase().includes(search.toLowerCase()));
   const activeTable = data?.tables.find(table => table.table === selectedTable);
-  function ask(question:string) { assistant.current?.ask(question, contextLot); setSidePanel(null); }
+  function ask(question:string) { setView('chat'); assistant.current?.ask(question, contextLot); setSidePanel(null); }
   function rememberQuestion(question:string) { setHistory(items => [question, ...items.filter(item => item !== question)].slice(0, 20)); }
 
   if (loading) return <div className="state-page"><LoaderCircle className="spin"/><h1>니즈푸드 제조 기록을 준비하고 있습니다.</h1></div>;
@@ -75,7 +79,7 @@ export default function App() {
 
   return <div className="needsfood-app">
     <header className="app-header">
-      <div className="brand"><span className="brand-mark"><Leaf size={22}/></span><div><strong>니즈푸드 에이전트</strong><small>생산 · 품질 · 납품</small></div></div>
+      <div className="brand"><span className="brand-mark"><Leaf size={22}/></span><div><strong>니즈푸드 에이전트</strong><small>생산 · 품질 · 납품 · V3</small></div></div>
       <div className="record-status"><span>{data.meta.demo_data ? '샘플 기록 기준' : '기록 기준일'}</span><strong>{data.meta.as_of}</strong></div>
       <div className="header-actions"><button className="mobile-panel-button" onClick={() => setSidePanel('library')}><Menu size={18}/>자료</button><button className="mobile-panel-button" onClick={() => setSidePanel('questions')}><Sparkles size={18}/>질문</button><button className="icon-button" aria-label="데이터 새로고침" onClick={load}><RefreshCw size={18}/></button><button className="settings-button" onClick={() => { setTokenDraft(token); setSettings(true); }}><Settings2 size={17}/>연결 설정</button></div>
     </header>
@@ -84,10 +88,10 @@ export default function App() {
     <div className="workspace-grid">
       <aside className={`question-panel ${sidePanel === 'questions' ? 'mobile-open' : ''}`}>
         <div className="side-heading"><div><span>질문</span><h2>추천질문리스트</h2></div><button className="icon-button mobile-close" aria-label="질문 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
-        <section className="history-section"><h3><History size={17}/>최근 질문 <span>{history.length}</span></h3>{history.length ? <div className="history-list">{history.map((question, index) => <button key={`${question}-${index}`} onClick={() => ask(question)}><span>{question}</span><ChevronRight size={15}/></button>)}</div> : <p className="empty-note">이 세션에서 질문하면 여기에 쌓입니다.</p>}</section>
+        <section className="recommend-section"><h3>보고서 리스트</h3><ol>{Object.values(reportTitles).map((title,i)=><li key={title}><button onClick={()=>{setContextLot('');setView('chat');assistant.current?.ask(title+' 만들어줘','');setSidePanel(null)}}><span>{i+1}</span>{title}</button></li>)}</ol></section><section className="history-section"><h3><History size={17}/>최근 질문 <span>{history.length}</span></h3>{history.length ? <div className="history-list">{history.map((question, index) => <button key={`${question}-${index}`} onClick={() => ask(question)}><span>{question}</span><ChevronRight size={15}/></button>)}</div> : <p className="empty-note">이 세션에서 질문하면 여기에 쌓입니다.</p>}</section>
         <section className="recommend-section"><h3><Sparkles size={17}/>추천 질문</h3><div className="recommend-tabs" role="tablist" aria-label="질문 예시 분류">{(['데이터 대시보드','지식베이스','복합질문'] as RecommendationTab[]).map(tab=><button key={tab} role="tab" aria-selected={recommendationTab===tab} className={recommendationTab===tab?'active':''} onClick={()=>setRecommendationTab(tab)}>{tab}</button>)}</div><ol>{recommendations.map((question, index) => <li key={question}><button onClick={() => ask(question)}><span>{String(index + 1).padStart(2, '0')}</span>{question}</button></li>)}</ol></section>
       </aside>
-      <main className="conversation-panel"><Assistant ref={assistant} data={data} token={token} user={null} lot={contextLot} onLot={setContextLot} onSettings={() => { setTokenDraft(token); setSettings(true); }} onSave={() => setSettings(true)} work={null} open={false} onClose={() => {}} onQuestion={rememberQuestion}/></main>
+      <main className="conversation-panel"><nav className="work-tabs" aria-label="작업 화면">{([['chat','대화'],['studio','연구소'],['reports','보고서']] as const).map(([key,label])=><button key={key} aria-selected={view===key} onClick={()=>setView(key)}>{label}</button>)}</nav>{view==='studio'&&<div className="v3-workspace"><FoodStudio key={token} token={token} workspace={data}/></div>}{view==='reports'&&<div className="v3-workspace"><ReportPanel key={token} token={token}/></div>}<div className="chat-view" hidden={view!=='chat'}><Assistant active={view==='chat'} ref={assistant} data={data} token={token} user={null} lot={contextLot} onLot={setContextLot} onSettings={() => { setTokenDraft(token); setSettings(true); }} onSave={() => setSettings(true)} work={null} open={false} onClose={() => {}} onQuestion={rememberQuestion}/></div></main>
 
       <aside className={`library-panel ${sidePanel === 'library' ? 'mobile-open' : ''}`}>
         <div className="side-heading"><div><span>연결된 자료</span><h2>지식베이스 · DB</h2></div><button className="icon-button mobile-close" aria-label="자료 패널 닫기" onClick={() => setSidePanel(null)}><X size={18}/></button></div>
@@ -97,6 +101,6 @@ export default function App() {
     </div>
 
     {selectedDocument && <Modal title={selectedDocument.title || cleanDocumentName(selectedDocument.filename)} onClose={() => setSelectedDocument(null)}><div className="document-meta"><code>{selectedDocument.document_id}</code><span>{selectedDocument.status}</span></div><pre className="document-content">{selectedDocument.content}</pre></Modal>}
-    {settings && <Modal title="AI 연결 설정" onClose={() => setSettings(false)}><p className="settings-copy" role="status">{!data.meta.ai_configured ? '서버 AI 설정이 준비되지 않았습니다. 서버에 OpenAI API 키를 등록하고 재시작해야 합니다. 아래 접근 코드로는 API 키를 대신할 수 없습니다.' : data.meta.local_dev_ai ? '서버 AI 설정이 준비되어 있습니다. 이 기기에서는 접근 코드 없이 질문할 수 있습니다.' : '서버 AI 설정이 준비되어 있습니다. 관리자가 발급한 접근 코드를 입력해 주세요.'}</p>{data.meta.ai_configured && !data.meta.local_dev_ai && <label className="form-label">AI 접근 코드<input type="password" autoComplete="off" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)}/></label>}<div className="modal-actions"><button className="secondary-button" onClick={() => setSettings(false)}>닫기</button><button className="secondary-button" onClick={() => { setSettings(false); load(); }}>연결 상태 새로고침</button>{data.meta.ai_configured && !data.meta.local_dev_ai && <button className="primary-button" disabled={!tokenDraft.trim()} onClick={() => { const next = tokenDraft.trim(); setToken(next); sessionStorage.setItem('needsfood_access_token', next); setSettings(false); }}>연결 적용</button>}</div></Modal>}
+    {settings && <Modal title="AI 연결 설정" onClose={() => setSettings(false)}><p className="settings-copy" role="status">{!data.meta.ai_configured ? '서버 AI 설정이 준비되지 않았습니다. 서버에 OpenAI API 키를 등록하고 재시작해야 합니다. 아래 접근 코드로는 API 키를 대신할 수 없습니다.' : data.meta.local_dev_ai ? '서버 AI 설정이 준비되어 있습니다. 이 기기에서는 접근 코드 없이 질문할 수 있습니다.' : '서버 AI 설정이 준비되어 있습니다. 관리자가 발급한 접근 코드를 입력해 주세요.'}</p>{data.meta.ai_configured && !data.meta.local_dev_ai && <label className="form-label">AI 접근 코드<input type="password" autoComplete="off" value={tokenDraft} onChange={event => setTokenDraft(event.target.value)}/></label>}<p role="status">{connectionResult}</p><button className="secondary-button" disabled={checking||!data.meta.ai_configured} onClick={async()=>{setChecking(true);setConnectionResult('서버 모델에 연결을 확인하고 있습니다…');try{const result=await request<{model:string}>('/connection/check',{method:'POST',headers:{Authorization:'Bearer '+(tokenDraft.trim()||token)}});setConnectionResult('연결 정상 · '+result.model)}catch(e){setConnectionResult((e as Error).message)}finally{setChecking(false)}}}>{checking?'연결 확인 중…':'API 연결 확인'}</button><div className="modal-actions"><button className="secondary-button" onClick={() => setSettings(false)}>닫기</button><button className="secondary-button" onClick={() => { setSettings(false); load(); }}>연결 상태 새로고침</button>{data.meta.ai_configured && !data.meta.local_dev_ai && <button className="primary-button" disabled={!tokenDraft.trim()} onClick={() => { const next = tokenDraft.trim(); setToken(next); sessionStorage.setItem('needsfood_access_token', next); setSettings(false); }}>연결 적용</button>}</div></Modal>}
   </div>;
 }

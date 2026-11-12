@@ -1,72 +1,31 @@
 import {forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
-import {Mic,MicOff,PhoneOff,Play,Send,X,Volume2,RotateCcw,Save,Copy,LoaderCircle,Check} from 'lucide-react';
-import {request,track,type Answer,type Workspace,type User,type WorkItem} from '../types';
-import {callsAgent} from '../wake';
-import {useVoice} from '../hooks/useVoice';
+import {ArrowUp,Mic,Plus,Square} from 'lucide-react';
+import {apiRequest} from '../apiClient';
+import {type Answer,type Workspace,type User,type WorkItem} from '../types';
 import {useRealtimeVoice} from '../hooks/useRealtimeVoice';
-
+import ReportPanel from './ReportPanel';
 export type AssistantHandle={ask:(text:string,lot?:string)=>void;prepare:(text:string,lot?:string)=>void;focus:()=>void};
-type Props={data:Workspace;token:string;user:User|null;lot:string;onLot:(lot:string)=>void;onSettings:()=>void;onSave:(answer:Answer,question:string)=>void;work:WorkItem|null;open:boolean;onClose:()=>void;voiceFirst?:boolean;onQuestion?:(question:string)=>void};
-export const Assistant=forwardRef<AssistantHandle,Props>(function Assistant({data,token,user,lot,onLot,onSettings,onSave,work,open,onClose,voiceFirst=false,onQuestion},ref){
- const [copied,setCopied]=useState<number|null>(null);
- const mode:'ai'|'demo'=data.meta.ai_configured?'ai':'demo';
- const [text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const [pendingQuestion,setPendingQuestion]=useState('');
- const [messages,setMessages]=useState<{question:string;answer:Answer}[]>([]),[transcribed,setTranscribed]=useState(false),[liveTurns,setLiveTurns]=useState<{role:'user'|'assistant';text:string;answer?:Answer}[]>([]);
- const staged=useRef<string|null>(null),heard=useRef('');
- const lock=useRef(false),epoch=useRef(0),abort=useRef<AbortController|null>(null),input=useRef<HTMLTextAreaElement>(null),panel=useRef<HTMLElement>(null),chatScroll=useRef<HTMLDivElement>(null);
- const voice=useVoice(token,value=>{setText(value);heard.current=value;setTranscribed(true);input.current?.focus()});
- const realtime=useRealtimeVoice(token,lot,turn=>setLiveTurns(items=>[...items,turn]),(_name,output)=>{try{const answer=JSON.parse(output) as Answer;if(answer.text)setLiveTurns(items=>[...items,{role:'assistant',text:answer.text,answer}])}catch{/* Invalid tool output is not evidence. */}});
- const voiceAvailable=data.meta.ai_configured&&(!!token||!!data.meta.local_dev_ai);
- function cancel(){epoch.current++;abort.current?.abort();lock.current=false;setBusy(false);setPendingQuestion('');voice.cancel();realtime.stop()}
- useEffect(()=>{cancel();setMessages(work?.snapshots?.length?work.snapshots:work?.snapshot?[work.snapshot]:[]);setLiveTurns([]);setText(staged.current||'');staged.current=null;setError('');setTranscribed(false);setCopied(null)},[lot,work?.id,user?.id,token]);
- useEffect(()=>()=>{epoch.current++;abort.current?.abort()},[]);
- useEffect(()=>{if(!open)return;const previous=document.activeElement as HTMLElement|null;input.current?.focus();return()=>previous?.focus()},[open]);
- useEffect(()=>{if(!open){voice.cancel();realtime.stop()}},[open]);
- const scrollAnchor=useRef('');
- useEffect(()=>{const node=chatScroll.current;if(!node)return;const key=liveTurns.length?'voice-'+liveTurns.filter(t=>t.role==='user').length:'text-'+messages.length;if(scrollAnchor.current===key)return;const target=liveTurns.length?Array.from(node.querySelectorAll<HTMLElement>('.live-caption')).find((_,i,all)=>i>all.map(n=>n.classList.contains('user-message')).lastIndexOf(true)):node.querySelector<HTMLElement>('.exchange:last-of-type .assistant-message');if(target){scrollAnchor.current=key;node.scrollTop+=target.getBoundingClientRect().top-node.getBoundingClientRect().top-16}},[messages,liveTurns]);
- async function ask(question:string,explicitLot?:string,source:'text'|'suggestion'='suggestion'){
-   if(lock.current||realtime.active||!question.trim())return;
-   if(!callsAgent(question,data.meta.wake)){setError(`질문을 “${data.meta.wake.agent_name},”로 시작해 주세요.`);return;}
-   const selected=explicitLot??lot;
-   if(explicitLot!==undefined&&(explicitLot!==lot||work)){staged.current=question;onLot(explicitLot);return}
-   onQuestion?.(question.trim());
-   lock.current=true;setBusy(true);setPendingQuestion(question.trim());setError('');voice.cancel();const run=epoch.current;abort.current=new AbortController();
-   const spoken=transcribed&&source==='text';if(spoken&&question!==heard.current)track('transcript_edited');track('question_submitted',{source:spoken?'voice':source,mode});const began=performance.now();
-   try{
-    const answer=await request<Answer>('/chat',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify({question,lot_id:selected||null,work_id:work?.id||null,mode,history:messages.flatMap(m=>[{role:"user",text:m.question},{role:"assistant",text:m.answer.text}]).slice(-12)}),signal:abort.current.signal});
-    if(run!==epoch.current)return;
-    if(answer.ignored){setPendingQuestion('');return;}
-    track('answer_ready',{mode,duration_ms:performance.now()-began});
-    setMessages(m=>[...m,{question,answer}]);setPendingQuestion('');setText('');setTranscribed(false);
-   }catch(e){if(run===epoch.current&&(e as Error).name!=='AbortError'){setPendingQuestion('');setError((e as Error).message);setText(question)}}
-   finally{if(run===epoch.current){setBusy(false);lock.current=false}}
+type Props={data:Workspace;token:string;active?:boolean;lot:string;onLot:(lot:string)=>void;onSettings:()=>void;onQuestion?:(q:string)=>void;user:User|null;work:WorkItem|null;open:boolean;onClose:()=>void;onSave:(answer:Answer,q:string)=>void};
+type Message={role:'user'|'assistant';text:string;answer?:Answer;lot?:string};
+export const Assistant=forwardRef<AssistantHandle,Props>(function Assistant({data,token,active=true,lot,onLot,onSettings,onQuestion},ref){
+ const [messages,setMessages]=useState<Message[]>([]),[text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const pending=useRef<AbortController|null>(null),epoch=useRef(0),input=useRef<HTMLTextAreaElement>(null),scroll=useRef<HTMLDivElement>(null),anchor=useRef(-1),context=useRef(lot);
+ const voice=useRealtimeVoice(token,lot,turn=>setMessages(old=>[...old,turn]),(_name,output)=>{try{const a=JSON.parse(output) as Answer;if(a.text)setMessages(old=>[...old,{role:'assistant',text:a.text,answer:a}])}catch{/* malformed output isn't evidence */}});
+ useEffect(()=>{if(!active)voice.stop()},[active,voice.stop]);
+ useEffect(()=>{context.current=lot},[lot]);
+ useEffect(()=>{epoch.current++;pending.current?.abort();pending.current=null;setBusy(false);setMessages([]);setError('');voice.stop()},[token]);
+ useEffect(()=>()=>{epoch.current++;pending.current?.abort()},[]);
+ useEffect(()=>{if(!active||!scroll.current)return;const node=scroll.current;let user=-1;messages.forEach((m,i)=>{if(m.role==='user')user=i});const first=messages.findIndex((m,i)=>i>user&&m.role==='assistant');const index=first>=0?first:user;if(index<0||anchor.current===index)return;const target=node.querySelectorAll<HTMLElement>('.nf-message')[index];if(target){anchor.current=index;node.scrollTop+=target.getBoundingClientRect().top-node.getBoundingClientRect().top-16}},[messages,active]);
+ function reset(){epoch.current++;pending.current?.abort();pending.current=null;setBusy(false);setMessages([]);setText('');setError('');anchor.current=-1;voice.stop();input.current?.focus()}
+ async function ask(question:string,selected=lot){
+  question=question.trim();if(!question||pending.current||voice.active)return;
+  const history=selected===context.current?messages.slice(-12).map(({role,text})=>({role,text:text.slice(0,4000)})):[];
+  context.current=selected;if(selected!==lot)onLot(selected);
+  const run=++epoch.current,c=new AbortController();pending.current=c;setBusy(true);setError('');setText('');setMessages(old=>[...old,{role:'user',text:question,lot:selected}]);onQuestion?.(question);
+  try{const a=await apiRequest<Answer>('/chat',{method:'POST',signal:c.signal,body:JSON.stringify({question,lot_id:selected||null,mode:data.meta.ai_configured?'ai':'demo',history})},token);if(run===epoch.current&&!a.ignored)setMessages(old=>[...old,{role:'assistant',text:a.text,answer:a,lot:selected}])}
+  catch(e){if(run===epoch.current&&(e as Error).name!=='AbortError'){setError((e as Error).message);setText(question)}}finally{if(run===epoch.current){pending.current=null;setBusy(false)}}
  }
- function prepare(question:string,targetLot=lot){if(lock.current)return;if(targetLot!==lot){staged.current=question;onLot(targetLot)}else setText(question);input.current?.focus()}
- useImperativeHandle(ref,()=>({ask,prepare,focus:()=>input.current?.focus()}));
- async function reset(){cancel();try{await request('/chat/reset',{method:'POST'});setMessages([]);setLiveTurns([]);setText('');setError('');setTranscribed(false);setCopied(null);input.current?.focus()}catch(e){setError((e as Error).message)}}
- function trap(e:React.KeyboardEvent){if(!open)return;if(e.key==='Escape'){voice.cancel();onClose()}if(e.key==='Tab'){const nodes=Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea,select,summary')??[]).filter(el=>el.getClientRects().length);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}}
- return <aside ref={panel} className={`assistant-panel ${!messages.length&&!pendingQuestion&&!liveTurns.length?'is-empty':''} ${open?'mobile-open':''} ${voiceFirst?'voice-first':''}`} role={open?'dialog':undefined} aria-modal={open||undefined} aria-label="업무 에이전트" onKeyDown={trap}>
-  <header className="agent-header"><div><span className="eyebrow">생산부터 납품까지, 기록을 함께 확인합니다</span><h2>니즈푸드 에이전트</h2></div><button className="icon-btn" aria-label="대화 초기화" onClick={reset}><RotateCcw size={18}/></button><button className="icon-btn agent-close" aria-label="대화 닫기" onClick={()=>{voice.cancel();onClose()}}><X/></button></header>
-
-
-  {work&&<p className="context-note">이어 보는 업무: {work.title}</p>}
-  <div className="chat-scroll" ref={chatScroll}>
-    {!messages.length&&!pendingQuestion&&!liveTurns.length&&<div className="agent-welcome"><h3>오늘 궁금한거 질문해!!</h3></div>}
-    {messages.map((m,i)=><article className="exchange" key={i}><p className="user-message">{m.question}</p><div className="assistant-message"><div className="answer-label">{m.answer.mode==='demo'?'자료 조회':'니즈푸드 · AI 분석'}</div><AnswerContent answer={m.answer}/><small>질문 대상: {m.answer.context?.lot_id||'전체 기록'}</small><details onToggle={e=>{if(e.currentTarget.open)track('evidence_opened')}}><summary>답변 근거 보기 · 샘플·미승인 자료 · 문서 {m.answer.evidence.length}개 · 조회 기록 {m.answer.records.length}건</summary>{m.answer.evidence.map((ev,j)=><details className="source-detail" key={j}><summary>{ev.filename}</summary><pre>{ev.text}</pre></details>)}{m.answer.records.map((row,j)=><details className="source-detail" key={j}><summary>기록 {j+1} · {String(row.lot_id??row.item_name??row.name??'조회 결과')}</summary><pre>{JSON.stringify(row,null,2)}</pre></details>)}{!m.answer.evidence.length&&!m.answer.records.length&&<p>연결된 근거가 없습니다.</p>}</details><div className="answer-actions"><button disabled={!voiceAvailable} onClick={()=>voice.speak(m.answer.summary||m.answer.text)}><Volume2 size={16}/>답변 듣기</button><button onClick={async()=>{if(user){onSave(m.answer,m.question);return}try{await navigator.clipboard.writeText(`${m.question}\n\n${m.answer.text}\n\n질문 대상: ${m.answer.context?.lot_id||'전체 기록'}\n${m.answer.mode==='demo'?'샘플 기록 조회':'AI 답변'}\n근거 문서: ${m.answer.evidence.map(e=>e.filename).join(', ')||'없음'}`);setCopied(i)}catch{setError('복사하지 못했습니다. 답변을 선택해 복사해 주세요.')}}}>{copied===i?<Check size={16}/>:user?<Save size={16}/>:<Copy size={16}/>} {user?(work?'업무에 답변 추가':'업무로 저장'):(copied===i?'복사 완료':'답변 복사')}</button></div>{m.answer.captured_at&&<small>근거 보존: {new Date(m.answer.captured_at).toLocaleString('ko-KR')}</small>}</div></article>)}
-    {liveTurns.map((turn,i)=>turn.role==='user'?<p className="user-message live-caption" key={`live-${i}`}>{turn.text}</p>:<div className="assistant-message live-caption" key={`live-${i}`}><div className="answer-label">실시간 음성 · AI 답변</div>{turn.answer?<><AnswerContent answer={turn.answer}/><details><summary>조회 근거</summary><pre>{JSON.stringify({documents:turn.answer.evidence,records:turn.answer.records},null,2)}</pre></details></>:<p>{turn.text}</p>}</div>)}
-    {pendingQuestion&&<p className="user-message pending-message">{pendingQuestion}</p>}
-    {busy&&<p role="status" className="thinking"><LoaderCircle className="spin" size={18}/>기록을 확인하고 있습니다. <button onClick={cancel}>대기 취소</button></p>}
-  </div>
-  <div className={`realtime-voice ${realtime.active?'active':''}`} aria-live="polite">
-   {!realtime.active?<button className="voice-start" disabled={busy} onClick={()=>{if(!voiceAvailable){onSettings();return}voice.cancel();setLiveTurns([]);void realtime.start()}}><Mic size={22}/>{voiceAvailable?'실시간 음성으로 질문하기':'AI 연결 설정 확인'}</button>:<><div className="live-status"><i/><span>{realtime.state==='permission'?'마이크 권한 확인 중':realtime.state==='connecting'?'연결 중':realtime.state==='speaking'?'듣고 있어요':realtime.state==='responding'?'답변 준비 중':'편하게 말씀하세요'}</span></div><button className="icon-btn" aria-label={realtime.muted?'마이크 켜기':'마이크 끄기'} onClick={realtime.toggleMute}>{realtime.muted?<MicOff size={19}/>:<Mic size={19}/>}</button>{realtime.needsPlay&&<button className="icon-btn" aria-label="음성 재생" onClick={()=>void realtime.play()}><Play size={19}/></button>}<button className="voice-end" onClick={realtime.stop}><PhoneOff size={17}/>종료</button></>}
-  </div>
-  {voice.error&&<p className="voice-error" role="alert">{voice.error}</p>}
-  {realtime.error&&<p className="voice-error" role="alert">{realtime.error}</p>}
-  {error&&<p className="voice-error" role="alert">{error}</p>}
-  <form className="composer" onSubmit={e=>{e.preventDefault();ask(text,undefined,'text')}}>{transcribed&&<p className="transcript-notice">인식한 문장과 LOT·수치를 확인한 뒤 보내세요.</p>}<textarea ref={input} aria-label="에이전트에게 질문" value={text} onChange={e=>setText(e.target.value)} rows={2} maxLength={2000} placeholder="생산·품질·재고에 대해 궁금한 것을 질문하세요…" onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&e.keyCode!==229){e.preventDefault();if(voice.state==='idle')void ask(text,undefined,'text')}}} disabled={busy||realtime.active||voice.state!=='idle'}/><div><small>호출명 없이 질문 · Enter로 보내기</small><button className="send-button" aria-label="질문 보내기" disabled={!text.trim()||busy||realtime.active||voice.state!=='idle'}><Send size={18}/><span>보내기</span></button></div></form>
-  <p className="assistant-disclaimer">{voiceAvailable?'음성 답변 중에도 편하게 말씀하세요. 새 질문을 들으면 이전 답변을 멈춥니다.':'음성 사용은 설정에서 AI 연결이 필요합니다.'}<br/>공정 변경·출하 승인은 담당자가 결정합니다.</p>
- </aside>
+ useImperativeHandle(ref,()=>({ask:(q,l)=>{void ask(q,l)},prepare:(q,l)=>{setText(q);if(l!==undefined)onLot(l);input.current?.focus()},focus:()=>input.current?.focus()}));
+ return <section className="nf-conversation"><div className="nf-chat-heading"><div><h1>니즈푸드 에이전트</h1><p>생산·품질·재고를 원본 근거로 확인합니다.</p></div><button onClick={reset}><Plus size={16}/>새 대화</button></div><div className="nf-messages" ref={scroll} aria-live="polite">{!messages.length&&<div className="nf-welcome">오늘 궁금한거 질문해!!</div>}{messages.map((m,i)=><article className={'nf-message '+m.role} key={i}><small>{m.role==='user'?'나':m.answer?.mode==='demo'?'니즈푸드 · 자료 조회':'니즈푸드 · AI'}</small>{m.answer?<><AnswerContent answer={m.answer} token={token}/><details><summary>원본 근거 · 문서 {m.answer.evidence?.length||0}개 · 기록 {m.answer.records?.length||0}건</summary>{m.answer.evidence?.map((d,j)=><details key={j}><summary>{d.filename}</summary><pre>{d.text}</pre></details>)}{m.answer.records?.length?<pre>{JSON.stringify(m.answer.records,null,2)}</pre>:<p>연결된 원본 기록이 없습니다.</p>}</details><small>질문 대상: {m.answer.context?.lot_id||m.lot||'전체 기록'}</small></>:<p className="nf-answer-text">{m.text}</p>}</article>)}{busy&&<p role="status">자료와 근거를 확인하고 있습니다…</p>}</div><div className="nf-input-area">{error&&<p className="error" role="alert">{error}<button onClick={onSettings}>연결 설정</button></p>}{voice.error&&<p className="error" role="alert">{voice.error}</p>}{voice.active&&<div className="nf-voice-status">음성 연결 · {voice.state}<button onClick={voice.toggleMute}>{voice.muted?'음소거 해제':'음소거'}</button><button onClick={voice.stop}><Square size={14}/>종료</button></div>}{voice.needsPlay&&<button onClick={()=>void voice.play()}>음성 재생</button>}<form onSubmit={e=>{e.preventDefault();void ask(text)}}><textarea ref={input} aria-label="에이전트에게 질문" value={text} maxLength={2000} rows={3} placeholder="생산·품질·재고에 대해 질문하세요…" onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void ask(text)}}}/><div><span>{data.meta.ai_configured?'AI 분석':'자료 조회'} · 호출명 없이 질문</span><button type="button" aria-label="음성 시작" disabled={busy||voice.active} onClick={()=>{if(data.meta.ai_configured&&(token||data.meta.local_dev_ai))void voice.start();else onSettings()}}><Mic size={18}/></button><button aria-label="질문 보내기" disabled={busy||voice.active||!text.trim()}><ArrowUp size={20}/></button></div></form><small>자료의 기준일과 출처를 확인하세요. 제조 변경·출하 승인은 담당자가 결정합니다.</small></div></section>
 });
-
-function AnswerContent({answer}:{answer:Answer}){return <>{answer.comparison_tables?.map((table,i)=><section className="comparison-table" key={i}><h3>{table.title}</h3><div className="table-scroll" tabIndex={0} role="region" aria-label={table.title}><table><thead><tr>{table.columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{table.rows.map((r,ri)=><tr key={ri}>{r.map((v,ci)=><td key={ci}>{v}</td>)}</tr>)}</tbody></table></div></section>)}{answer.comparison_tables?.length?<details><summary>분석 설명과 다음 확인사항</summary><p>{answer.text}</p></details>:<p>{answer.text}</p>}{answer.request_coverage&&<details><summary>요청별 답변 확인</summary><ul>{answer.request_coverage.map((c,i)=><li key={i}>{c.request} · {c.status==='answered'?'답변·근거 확인':'추가 확인 필요'}</li>)}</ul></details>}</>}
+function AnswerContent({answer,token}:{answer:Answer;token:string}){return <>{answer.comparison_tables?.map((t,i)=><section className="comparison-table" key={i}><h3>{t.title}</h3><div className="table-scroll"><table><thead><tr>{t.columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{t.rows.map((r,j)=><tr key={j}>{r.map((v,k)=><td key={k}>{v}</td>)}</tr>)}</tbody></table></div></section>)}<p className="nf-answer-text">{answer.text}</p>{(answer.report||answer.report_picker)&&<ReportPanel token={token} initial={answer.report} kind={answer.report_picker} lot={answer.report_lot}/>} {answer.request_coverage&&<details><summary>요청별 답변 확인</summary>{answer.request_coverage.map((c,i)=><p key={i}>{c.request} · {c.status==='answered'?'답변·근거 확인':'추가 확인 필요'}</p>)}</details>}</>}

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
@@ -96,7 +97,7 @@ def test_render_and_rerun(tmp_path, monkeypatch):
     monkeypatch.setenv('SQLITE_PATH', str(tmp_path/'ui.db'))
     monkeypatch.setenv('DATABASE_URL', '')
     monkeypatch.setenv('OPENAI_API_KEY', '')
-    at = AppTest.from_file('app.py', default_timeout=15).run()
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / 'app.py', default_timeout=15).run()
     assert not at.exception
     for _ in range(2):
         next(b for b in at.button if b.label == '새 대화').click().run()
